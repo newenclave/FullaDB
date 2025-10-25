@@ -1,11 +1,45 @@
 cmake_minimum_required(VERSION 3.20)
-project(fulladb LANGUAGES CXX)
+
+project(FullaDB LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON) 
 
-add_library(fulladb INTERFACE)
-target_include_directories(fulladb INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+file(GLOB_RECURSE FULLA_HEADERS
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp"
+)
 
-#add_executable(page_view_tests tests/page_view_tests.cpp)
-#target_link_libraries(page_view_tests PRIVATE dbpages)
+add_library(fulladb INTERFACE ${FULLA_HEADERS})
+target_include_directories(fulladb
+    INTERFACE
+        ${CMAKE_CURRENT_SOURCE_DIR}/fulla/include
+)
+
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/include"
+             PREFIX "include"
+             FILES ${FULLA_HEADERS})
+
+if (MSVC)
+    target_compile_options(fulladb INTERFACE /W4 /permissive-)
+else()
+    target_compile_options(fulladb INTERFACE -Wall -Wextra -Wpedantic -Wconversion)
+endif()
+
+option(FULLADB_BUILD_TESTS "Build tests target" ON)
+
+if (FULLADB_BUILD_TESTS)
+    add_executable(tests
+        tests/tests.cpp
+        tests/test_byteorder.cpp
+        tests/test_serializer.cpp
+        tests/test_codec.cpp
+        tests/test_data_view.cpp
+    )
+    target_link_libraries(tests PRIVATE fulladb)
+
+    include(CTest)
+    enable_testing()
+    add_test(NAME fulladb_tests COMMAND tests)
+endif()
