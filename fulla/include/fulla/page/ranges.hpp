@@ -6,8 +6,6 @@
  * License: MIT
  */
 
-
-// include/fulla/page/ranges.hpp
 #pragma once
 
 #include <compare>

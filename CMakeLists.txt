@@ -40,6 +40,8 @@ if (FULLADB_BUILD_TESTS)
         tests/test_page_header.cpp
         tests/test_slot_page.cpp
         tests/test_page_ranges.cpp
+        tests/test_file_device.cpp
+        tests/test_buffer_manager.cpp
     )
     target_link_libraries(tests PRIVATE fulladb)
 
