@@ -14,6 +14,7 @@
 #include <format>
 
 #include "fulla/core/types.hpp"
+#include "fulla/codec/data_serializer.hpp"
 
 namespace fulla::codec {
 

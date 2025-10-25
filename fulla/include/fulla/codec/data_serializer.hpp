@@ -9,6 +9,7 @@
 #pragma once
 
 #include "fulla/codec/prop_types.hpp"
+#include "fulla/codec/serializer.hpp"
 
 namespace fulla::codec {
 
