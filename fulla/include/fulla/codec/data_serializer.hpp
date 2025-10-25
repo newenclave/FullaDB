@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include "fulla/codec/prop_types.hpp"
+
 namespace fulla::codec {
 
     using core::byte;

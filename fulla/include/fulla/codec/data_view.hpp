@@ -67,7 +67,7 @@ namespace fulla::codec {
 			case data_type::fp64:
 				return compare_word<double>(left_data, right_data);
 			case data_type::tuple:
-				return compare_tuple_v2(left_data, right_data);
+				return compare_tuple(left_data, right_data);
 			}
 			return std::partial_ordering::unordered;
 		}
@@ -207,7 +207,34 @@ namespace fulla::codec {
 			return true;
 		}
 
-		static std::partial_ordering compare_tuple_v2(byte_view lhs, byte_view rhs)
+		static std::partial_ordering compare_sequence(byte_view a, byte_view b) {
+
+			while (true) {
+				const bool a_empty = a.empty();
+				const bool b_empty = b.empty();
+				if (a_empty || b_empty) {
+					return (!a_empty || !b_empty) ? (a_empty ? std::partial_ordering::less
+						: std::partial_ordering::greater)
+						: std::partial_ordering::equivalent;
+				}
+
+				const auto asz = get_size(a);
+				const auto bsz = get_size(b);
+				if (asz == 0 || bsz == 0 || asz > a.size() || bsz > b.size()) {
+					return std::partial_ordering::unordered;
+				}
+
+				auto ord = compare(a.first(asz), b.first(bsz));
+				if (ord != std::partial_ordering::equivalent) {
+					return ord;
+				}
+
+				a = a.subspan(asz);
+				b = b.subspan(bsz);
+			}
+		}
+
+		static std::partial_ordering compare_tuple(byte_view lhs, byte_view rhs)
 		{
 			auto [L, lsz] = serializer<std::uint32_t>::load(lhs.data(), lhs.size());
 			auto [R, rsz] = serializer<std::uint32_t>::load(rhs.data(), rhs.size());

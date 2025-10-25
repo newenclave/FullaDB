@@ -36,6 +36,7 @@ if (FULLADB_BUILD_TESTS)
         tests/test_serializer.cpp
         tests/test_codec.cpp
         tests/test_data_view.cpp
+        tests/test_prop.cpp
     )
     target_link_libraries(tests PRIVATE fulladb)
 
