@@ -19,8 +19,35 @@ struct stats {
     void reset() { *this = {}; }
 };
 
+
+template <typename T = int>
+struct null_field {
+    // pre-increment: ++x
+    constexpr null_field& operator++() noexcept { return *this; }
+    // pre-decrement: --x
+    constexpr null_field& operator--() noexcept { return *this; }
+
+    // post-increment: x++
+    constexpr T operator++(int) noexcept { return T{}; }
+    // post-decrement: x--
+    constexpr T operator--(int) noexcept { return T{}; }
+
+    // compound updates: x += n / x -= n
+    constexpr null_field& operator+=(T) noexcept { return *this; }
+    constexpr null_field& operator-=(T) noexcept { return *this; }
+
+    // plain assignment: x = n
+    constexpr null_field& operator=(T) noexcept { return *this; }
+
+    // implicit read as zero: T v = x; std::cout << x;
+    constexpr operator T() const noexcept { return T{}; }
+};
+
 struct null_stats {
-    // Same API, but no counters
+    null_field<> hits, misses, evictions, pinned_fail;
+    null_field<> reads, writes, writebacks, forced_flushes;
+    null_field<> alloc_pages, created_pages;
+    null_field<> clock_scans, refbit_clears;
     void reset() {}
 };
 

@@ -17,8 +17,8 @@
 #include <cstring>
 
 #include "fulla/core/bytes.hpp"
-#include "fulla/storage/device.hpp"        // RandomAccessDevice, position_type
-#include "fulla/storage/stats.hpp"         // stats / null_stats
+#include "fulla/storage/device.hpp" // RandomAccessDevice, position_type
+#include "fulla/storage/stats.hpp"  // stats / null_stats
 
 #ifndef DB_ASSERT
   #include <cassert>

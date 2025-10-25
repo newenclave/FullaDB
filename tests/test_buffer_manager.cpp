@@ -19,8 +19,10 @@ static std::filesystem::path temp_file(const char* stem) {
     return p;
 }
 
+
 TEST_SUITE("storage/buffer_manager") {
     TEST_CASE("create/fetch/flush cycle") {
+
         namespace fs = std::filesystem;
         auto path = temp_file("bm");
 
@@ -71,17 +73,24 @@ TEST_SUITE("storage/buffer_manager") {
             BM bm(dev, byte_span{arena.data(), arena.size()},
                   std::span{frames.data(), frames.size()});
 
-            auto p0 = bm.create(); auto id0 = p0.id(); p0.reset();
-            auto p1 = bm.create(); auto id1 = p1.id(); p1.reset();
+            auto p0 = bm.create(); 
+            auto id0 = p0.id(); 
+            p0.reset();
+            
+            auto p1 = bm.create(); 
+            auto id1 = p1.id(); 
+            p1.reset();
             bm.flush_all(true);
 
             // touching p0 and p1 to set ref bits
-            auto h0 = bm.fetch(id0); auto h1 = bm.fetch(id1);
-            h0.reset(); h1.reset();
+            auto h0 = bm.fetch(id0); 
+            auto h1 = bm.fetch(id1);
+            h0.reset(); 
+            h1.reset();
 
             // third page forces eviction
             auto p2 = bm.create(); 
-            auto id2 = p2.id(); 
+            [[maybe_unused]] auto id2 = p2.id();
             p2.reset();
             bm.flush_all(true);
 
