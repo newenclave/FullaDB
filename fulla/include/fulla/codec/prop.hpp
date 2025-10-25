@@ -26,7 +26,7 @@ namespace fulla::codec::prop {
     using core::byte_span;
     using byte_buffer = std::vector<byte>;
 
-    // ----- Value wrappers (lightweight “property” types) -----
+    // ----- Value wrappers (lightweight "property" types) -----
     struct ui32 { std::uint32_t v = 0; };
     struct ui64 { std::uint64_t v = 0; };
     struct i32  { std::int32_t  v = 0; };
@@ -77,7 +77,7 @@ namespace fulla::codec::prop {
         ds.append(t.buf.data(), t.buf.size()); // payload already contains type-tagged tuple
     }
 
-    // Build a full record from a sequence of values (ui32, str, tuple, ...).
+    // Build a full record from a sequence of values (ui32, str, tuple, ...). NOT A TUPLE
     template <class... Ts>
     rec make_record(Ts&&... xs) {
         data_serializer ds;

@@ -1,16 +1,16 @@
 // tests/test_codec.cpp
-#include "tests.hpp"
-
-#include "fulla/core/bytes.hpp"
-#include "fulla/codec/prop_types.hpp"
-#include "fulla/codec/serializer.hpp"
-#include "fulla/codec/data_serializer.hpp"
 
 #include <array>
 #include <string>
 #include <variant>
 #include <vector>
 #include <cstring>
+
+#include "tests.hpp"
+#include "fulla/core/bytes.hpp"
+#include "fulla/codec/prop_types.hpp"
+#include "fulla/codec/serializer.hpp"
+#include "fulla/codec/data_serializer.hpp"
 
 using namespace fulla::core;
 using namespace fulla::codec;
