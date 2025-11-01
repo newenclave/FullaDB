@@ -72,6 +72,10 @@
         "filesystem": "cpp",
         "forward_list": "cpp",
         "unordered_map": "cpp",
-        "chrono": "cpp"
+        "chrono": "cpp",
+        "functional": "cpp",
+        "numeric": "cpp",
+        "ranges": "cpp",
+        "variant": "cpp"
     }
 }

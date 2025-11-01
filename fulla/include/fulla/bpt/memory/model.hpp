@@ -9,6 +9,7 @@
 #pragma once
 #include <vector>
 #include "fulla/bpt/concepts.hpp"
+#include "fulla/bpt/memory/containter.hpp"
 
 namespace fulla::bpt::memory {
 
@@ -75,7 +76,7 @@ namespace fulla::bpt::memory {
 
         struct value_borrow_type {
             value_borrow_type() = default;
-            explicit value_borrow_type(value_type val) : v(std::move(val)) {}
+            explicit value_borrow_type(value_type &val) : v(std::move(val)) {}
             const value_type* get() const {
                 return &v;
             }
@@ -109,35 +110,11 @@ namespace fulla::bpt::memory {
             }
         };
 
-        struct base_container {
-            ~base_container() = default;
-            virtual bool is_leaf() const {
-                return false;
-            }
+        using base_container = container::base<node_id_type, key_type, KeysMax>;
+        using inode_container = container::inode<node_id_type, key_type, KeysMax>;
+        using leaf_container = container::leaf<node_id_type, key_type, value_type, KeysMax>;
 
-            template <std::derived_from<base_container> T>
-            T* as() {
-                return static_cast<T*>(this);
-            }
-
-            node_id_type parent_ = {};
-            std::vector<key_type> keys_;
-        };
-
-        struct inode_container : public base_container {
-            std::vector<node_id_type> children_;
-        };
-
-        struct leaf_container : public base_container {
-            bool is_leaf() const override {
-                return true;
-            }
-            std::vector<value_type> values_;
-            node_id_type prev_ = {};
-            node_id_type next_ = {};
-        };
-
-        using node_uptr = std::unique_ptr<base_container>;
+        using container_uptr = std::unique_ptr<base_container>;
 
         struct node_base {
 
@@ -279,7 +256,7 @@ namespace fulla::bpt::memory {
             }
 
             value_borrow_type borrow_value(std::size_t pos) noexcept {
-                return value_borrow_type(std::move(impl()->values_[pos]));
+                return value_borrow_type(impl()->values_[pos]);
             }
 
             bool insert_value(std::size_t pos, value_in_type val) {
@@ -391,7 +368,7 @@ namespace fulla::bpt::memory {
                 return (id > 0) && (id <= nodes_.size() && nodes_[id - 1]);
             }
 
-            std::vector<node_uptr> nodes_;
+            std::vector<container_uptr> nodes_;
             node_id_type root_ = {};
         };
 
