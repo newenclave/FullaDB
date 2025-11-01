@@ -55,7 +55,7 @@ TEST_CASE("memory B+Tree: basic insert & find") {
     for (int i = 0; i < 50; ++i) {
         auto it = t.find(key_like_type{ i });
         CHECK(it != t.end());
-        CHECK(*it->second.get() == std::to_string(i));
+        CHECK(it->second.get() == std::to_string(i));
     }
     // find missing
     CHECK(t.find(key_like_type{ -1 }) == t.end());
@@ -64,8 +64,8 @@ TEST_CASE("memory B+Tree: basic insert & find") {
     // monotonic iteration
     int prev = -1;
     for (auto it = t.begin(); it != t.end(); ++it) {
-        CHECK(prev < *it->first.get()); // KeyOut should expose a getter or comparable view
-        prev = *it->first.get();
+        CHECK(prev < it->first.get()); // KeyOut should expose a getter or comparable view
+        prev = it->first.get();
     }
 }
 
@@ -93,14 +93,14 @@ TEST_CASE("memory B+Tree: erase semantics and iterator behavior") {
     auto next_after_erase = std::next(b0);
     auto it_after = t.erase(b0);
     CHECK(it_after != t.end());
-    CHECK(*it_after->first.get() == *next_after_erase->first.get());
+    CHECK(it_after->first.get() == next_after_erase->first.get());
 
     // erase last should return end()
     {
         // move to last using --end()
         auto it = t.end();
         --it;
-        int last_key = *it->first.get();
+        int last_key = it->first.get();
         auto ret = t.erase(it);
         CHECK(ret == t.end());
         CHECK(t.find(key_like_type{ last_key }) == t.end());
@@ -111,21 +111,21 @@ TEST_CASE("memory B+Tree: erase semantics and iterator behavior") {
     };
     
     const auto element_proj = [](const Tree::iterator::value_type& kv) {
-        return *kv.first.get(); 
+        return kv.first.get(); 
     };
 
     // erase a middle element and verify ordering
     {
         auto it = std::ranges::lower_bound(t, 73, cmp, element_proj);
         REQUIRE(it != t.end());
-        int k = *it->first.get();
+        int k = it->first.get();
         auto after = std::next(it);
-        auto after_key = *after->first.get();
+        auto after_key = after->first.get();
         auto ret   = t.erase(it);
         // ret should point to "after" element (or end) by key
         if (after != t.end()) {
             CHECK(ret != t.end());
-            CHECK(*ret->first.get() == after_key);
+            CHECK(ret->first.get() == after_key);
         } else {
             CHECK(ret == t.end());
         }
@@ -163,24 +163,24 @@ TEST_CASE("memory B+Tree: lower_bound and range scan") {
         };
 
     const auto element_proj = [](const Tree::iterator::value_type& kv) {
-        return *kv.first.get();
+        return kv.first.get();
         };
 
     // exact hit
     auto it = std::ranges::lower_bound(t, 40, cmp, element_proj);
     REQUIRE(it != t.end());
-    CHECK(*it->first.get() == 40);
+    CHECK(it->first.get() == 40);
 
     // nearest greater
     it = std::ranges::lower_bound(t, 41, cmp, element_proj);
     REQUIRE(it != t.end());
-    CHECK(*it->first.get() == 42);
+    CHECK(it->first.get() == 42);
 
     // range: [50, 80)
     it = std::ranges::lower_bound(t, 50, cmp, element_proj);
     int expected = 50;
-    for (; it != t.end() && *it->first.get() < 80; ++it) {
-        CHECK(*it->first.get() == expected);
+    for (; it != t.end() && it->first.get() < 80; ++it) {
+        CHECK(it->first.get() == expected);
         expected += 2;
     }
     CHECK(expected == 80);
@@ -204,7 +204,7 @@ TEST_CASE("memory B+Tree: upsert policy replaces value") {
 
     auto it = t.find(key_like_type{ 10 });
     REQUIRE(it != t.end());
-    CHECK(*it->second.get() == std::string("TEN"));
+    CHECK(it->second.get() == std::string("TEN"));
 }
 
 TEST_CASE("memory B+Tree vs std::map: randomized insert/erase equivalence (deterministic)") {
@@ -244,7 +244,7 @@ TEST_CASE("memory B+Tree vs std::map: randomized insert/erase equivalence (deter
             std::vector<int> tkeys;
             tkeys.reserve(ref.size());
             for (auto it = t.begin(); it != t.end(); ++it) {
-                tkeys.push_back(*it->first.get());
+                tkeys.push_back(it->first.get());
             }
             // collect keys from std::map
             std::vector<int> rkeys;

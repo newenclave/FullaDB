@@ -22,8 +22,8 @@ namespace fulla::bpt::memory {
 
         struct key_like_type {
             explicit key_like_type(const key_type& val) : v(&val) {};
-            const key_type* get() const {
-                return v;
+            const key_type& get() const {
+                return *v;
             }
         private:
             const key_type* v = nullptr;
@@ -32,8 +32,8 @@ namespace fulla::bpt::memory {
         struct key_out_type {
             key_out_type() = default;
             explicit key_out_type(const key_type& val) : v(&val) {};
-            const key_type* get() const {
-                return v;
+            const key_type& get() const {
+                return *v;
             }
         private:
             const key_type* v = nullptr;
@@ -42,8 +42,8 @@ namespace fulla::bpt::memory {
         struct key_borrow_type {
             key_borrow_type() = default;
             explicit key_borrow_type(key_type val) : v(std::move(val)) {};
-            const key_type* get() const {
-                return &v;
+            const key_type& get() const {
+                return v;
             }
         private:
             key_type v{};
@@ -51,11 +51,11 @@ namespace fulla::bpt::memory {
 
         struct value_in_type {
             explicit value_in_type(value_type& val) : v(&val) {}
-            const value_type* get() const {
-                return v;
+            const value_type& get() const {
+                return *v;
             }
-            value_type* get() {
-                return v;
+            value_type& get() {
+                return *v;
             }
         public:
             value_type *v = nullptr;
@@ -64,11 +64,11 @@ namespace fulla::bpt::memory {
         struct value_out_type {
             value_out_type() = default;
             explicit value_out_type(value_type& val) : v(&val) {}
-            const value_type* get() const {
-                return v;
+            const value_type& get() const {
+                return *v;
             }
-            value_type* get() {
-                return v;
+            value_type& get() {
+                return &v;
             }
         public:
             value_type* v = nullptr;
@@ -77,11 +77,11 @@ namespace fulla::bpt::memory {
         struct value_borrow_type {
             value_borrow_type() = default;
             explicit value_borrow_type(value_type &val) : v(std::move(val)) {}
-            const value_type* get() const {
-                return &v;
+            const value_type& get() const {
+                return v;
             }
-            value_type* get() {
-                return &v;
+            value_type& get() {
+                return v;
             }
         public:
             value_type v{};
@@ -130,7 +130,7 @@ namespace fulla::bpt::memory {
             }
 
             virtual std::size_t key_position(const key_like_type &key) const noexcept { // inode impl
-                const auto itr = std::ranges::upper_bound(base_->keys_, *key.get(), cmp{});
+                const auto itr = std::ranges::upper_bound(base_->keys_, key.get(), cmp{});
                 return std::distance(base_->keys_.begin(), itr);
             }
 
@@ -141,7 +141,7 @@ namespace fulla::bpt::memory {
             }
 
             bool keys_eq(const key_like_type& lhs, const key_like_type& rhs) const noexcept {
-                return cmp{}.eq(*lhs.get(), *rhs.get());
+                return cmp{}.eq(lhs.get(), rhs.get());
             }
 
             const key_out_type get_key(std::size_t pos) const noexcept {
@@ -153,12 +153,12 @@ namespace fulla::bpt::memory {
             };
 
             bool insert_key(std::size_t pos, const key_like_type &key) {
-                base_->keys_.emplace(base_->keys_.begin() + pos, *key.get());
+                base_->keys_.emplace(base_->keys_.begin() + pos, key.get());
                 return true;
             }
 
             bool update_key(std::size_t pos, const key_like_type& key) {
-                base_->keys_[pos] = key_type{ *key.get() };
+                base_->keys_[pos] = key_type{ key.get() };
                 return true;
             }
 
@@ -235,7 +235,7 @@ namespace fulla::bpt::memory {
             }
 
             std::size_t key_position(const key_like_type& key) const noexcept override { // leaf impl
-                const auto itr = std::ranges::lower_bound(impl()->keys_, *key.get(), cmp{});
+                const auto itr = std::ranges::lower_bound(impl()->keys_, key.get(), cmp{});
                 return std::distance(impl()->keys_.begin(), itr);
             }
 
@@ -260,12 +260,12 @@ namespace fulla::bpt::memory {
             }
 
             bool insert_value(std::size_t pos, value_in_type val) {
-                impl()->values_.emplace(impl()->values_.begin() + pos, std::move(*val.get()));
+                impl()->values_.emplace(impl()->values_.begin() + pos, std::move(val.get()));
                 return true;
             }
 
             bool update_value(std::size_t pos, value_in_type val) {
-                impl()->values_[pos] = std::move(*val.v);
+                impl()->values_[pos] = std::move(val.get());
                 return true;
             }
 
@@ -380,19 +380,19 @@ namespace fulla::bpt::memory {
         static_assert(concepts::NodeAccessor<accessor_type, node_id_type, inode, leaf_node>);
 
         static key_like_type key_out_as_like(key_out_type k) {
-            return key_like_type(*k.get());
+            return key_like_type(k.get());
         }
 
         static key_like_type key_borrow_as_like(key_borrow_type& k) {
-            return key_like_type(*k.get());
+            return key_like_type(k.get());
         }
 
         static value_in_type value_out_as_in(value_out_type k) {
-            return value_in_type(*k.get());
+            return value_in_type(k.get());
         }
 
         static value_in_type value_borrow_as_in(value_borrow_type &k) {
-            return value_in_type(*k.get());
+            return value_in_type(k.get());
         }
 
         static bool is_valid_id(const node_id_type& id) {

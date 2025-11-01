@@ -478,8 +478,11 @@ namespace fulla::bpt {
             return {};
         }
 
-        void handle_leaf_overflow_default(leaf_type& node, const key_like_type& key, value_in_type value, std::size_t pos, policies::rebalance ip) {
-            auto res_node = handle_leaf_overflow(node, ip);
+        void handle_leaf_overflow_default(leaf_type& node, const key_like_type& key, 
+            value_in_type value, 
+            std::size_t pos, 
+            policies::rebalance rp) {
+            auto res_node = handle_leaf_overflow(node, rp);
             if (node.keys_count() < pos) {
                 const auto insert_pos = pos - node.keys_count();
                 res_node.insert_key(insert_pos, key);
@@ -491,7 +494,7 @@ namespace fulla::bpt {
             }
         }
 
-        void handle_inode_overflow(inode_type& node, policies::rebalance ip) {
+        void handle_inode_overflow(inode_type& node, policies::rebalance rp) {
 
             auto& accessor = get_accessor();
             inode_type new_root;
@@ -518,8 +521,8 @@ namespace fulla::bpt {
                     auto pnode = accessor.load_inode(parent);
 
                     if (is_full(pnode)) {
-                        if (!(give_to_right(pnode, 1, ip) || give_to_left(pnode, 1, ip))) {
-                            handle_inode_overflow(pnode, ip);
+                        if (!(give_to_right(pnode, 1, rp) || give_to_left(pnode, 1, rp))) {
+                            handle_inode_overflow(pnode, rp);
                         }
                     }
 
@@ -534,7 +537,7 @@ namespace fulla::bpt {
             }
         }
 
-        leaf_type handle_leaf_overflow(leaf_type& node, policies::rebalance ip) {
+        leaf_type handle_leaf_overflow(leaf_type& node, policies::rebalance rp) {
 
             const auto node_id = node.self();
             auto& accessor = get_accessor();
@@ -567,8 +570,8 @@ namespace fulla::bpt {
                     auto parent = accessor.load_inode(parent_id);
 
                     if (is_full(parent)) {
-                        if (!(give_to_right(parent, 1, ip) || give_to_left(parent, 1, ip))) {
-                            handle_inode_overflow(parent, ip);
+                        if (!(give_to_right(parent, 1, rp) || give_to_left(parent, 1, rp))) {
+                            handle_inode_overflow(parent, rp);
                         }
                     }
                     parent_id = node.get_parent();
