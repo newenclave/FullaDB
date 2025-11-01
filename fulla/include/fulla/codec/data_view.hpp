@@ -208,30 +208,30 @@ namespace fulla::codec {
 			return true;
 		}
 
-		static std::partial_ordering compare_sequence(byte_view a, byte_view b) {
+		static std::partial_ordering compare_sequence(byte_view lhs, byte_view rhs) {
 
 			while (true) {
-				const bool a_empty = a.empty();
-				const bool b_empty = b.empty();
-				if (a_empty || b_empty) {
-					return (!a_empty || !b_empty) ? (a_empty ? std::partial_ordering::less
+				const bool l_empty = lhs.empty();
+				const bool r_empty = rhs.empty();
+				if (l_empty || r_empty) {
+					return (!l_empty || !r_empty) ? (l_empty ? std::partial_ordering::less
 						: std::partial_ordering::greater)
 						: std::partial_ordering::equivalent;
 				}
 
-				const auto asz = get_size(a);
-				const auto bsz = get_size(b);
-				if (asz == 0 || bsz == 0 || asz > a.size() || bsz > b.size()) {
+				const auto lsz = get_size(lhs);
+				const auto rsz = get_size(rhs);
+				if (lsz == 0 || rsz == 0 || lsz > lhs.size() || rsz > rhs.size()) {
 					return std::partial_ordering::unordered;
 				}
 
-				auto ord = compare(a.first(asz), b.first(bsz));
+				auto ord = compare(lhs.first(lsz), rhs.first(rsz));
 				if (ord != std::partial_ordering::equivalent) {
 					return ord;
 				}
 
-				a = a.subspan(asz);
-				b = b.subspan(bsz);
+				lhs = lhs.subspan(lsz);
+				rhs = rhs.subspan(rsz);
 			}
 		}
 

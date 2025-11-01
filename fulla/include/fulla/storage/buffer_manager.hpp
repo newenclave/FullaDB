@@ -6,7 +6,6 @@
  * License: MIT
  */
 
-// include/fulla/storage/buffer_manager.hpp
 #pragma once
 #include <cstdint>
 #include <limits>
@@ -29,10 +28,11 @@ namespace fulla::storage {
 
     using core::byte_view;
 
-    template <RandomAccessDevice Dev, typename PidT = std::uint32_t, typename StatsT = stats>
+    template <RandomAccessDevice DevT, typename PidT = std::uint32_t, typename StatsT = stats>
     class buffer_manager {
     public:
         using PID = PidT;
+        using device_type = DevT;
         static constexpr PID invalid_page_pid = std::numeric_limits<PID>::max();
 
         struct frame {
@@ -65,14 +65,22 @@ namespace fulla::storage {
             page_handle& operator=(const page_handle&) = delete;
 
             page_handle(page_handle&& other) noexcept
-                : pool_(other.pool_), f_(other.f_), gen_(other.gen_) {
-                other.pool_ = nullptr; other.f_ = nullptr; other.gen_ = 0;
+                : pool_(other.pool_)
+                , f_(other.f_)
+                , gen_(other.gen_) {
+                other.pool_ = nullptr; 
+                other.f_ = nullptr; 
+                other.gen_ = 0;
             }
             page_handle& operator=(page_handle&& other) noexcept {
                 if (this != &other) {
                     reset();
-                    pool_ = other.pool_; f_ = other.f_; gen_ = other.gen_;
-                    other.pool_ = nullptr; other.f_ = nullptr; other.gen_ = 0;
+                    pool_ = other.pool_; 
+                    f_ = other.f_; 
+                    gen_ = other.gen_;
+                    other.pool_ = nullptr; 
+                    other.f_ = nullptr; 
+                    other.gen_ = 0;
                 }
                 return *this;
             }
@@ -97,7 +105,9 @@ namespace fulla::storage {
 
             void reset() noexcept {
                 if (pool_ != nullptr && f_ != nullptr) { pool_->unpin(f_); }
-                pool_ = nullptr; f_ = nullptr; gen_ = 0;
+                pool_ = nullptr; 
+                f_ = nullptr; 
+                gen_ = 0;
             }
 
         private:
@@ -108,7 +118,7 @@ namespace fulla::storage {
         };
 
     public:
-        buffer_manager(Dev& dev, fulla::core::byte_span data_store, frame_span frame_store)
+        buffer_manager(device_type& dev, fulla::core::byte_span data_store, frame_span frame_store)
             : dev_(dev)
             , all_data_(data_store)
             , frames_(frame_store) {
@@ -187,7 +197,9 @@ namespace fulla::storage {
                 DB_ASSERT(f->pin == 0, "flush: page is pinned");
             }
             if (f->dirty) {
-                if (force) { st_.forced_flushes++; }
+                if (force) { 
+                    st_.forced_flushes++; 
+                }
                 write(pid, f->data); // best-effort
                 f->dirty = false;
             }
@@ -196,7 +208,9 @@ namespace fulla::storage {
         void flush_all(bool force = false) {
             for (auto& f : frames_) {
                 if (f.page_id != invalid_page_pid && f.dirty && ((f.pin == 0) || force)) {
-                    if (force) { st_.forced_flushes++; }
+                    if (force) { 
+                        st_.forced_flushes++; 
+                    }
                     write(f.page_id, f.data);
                     f.dirty = false;
                 }
@@ -211,9 +225,13 @@ namespace fulla::storage {
 
         bool evict(PID pid) {
             auto it = page_map_.find(pid);
-            if (it == page_map_.end()) { return false; }
+            if (it == page_map_.end()) { 
+                return false; 
+            }
             frame* f = it->second;
-            if (f->pin != 0 || f->dirty) { return false; }
+            if (f->pin != 0 || f->dirty) { 
+                return false; 
+            }
             f->page_id = invalid_page_pid;
             f->ref_bit = false;
             ++f->gen;
@@ -341,7 +359,7 @@ namespace fulla::storage {
         }
 
     private:
-        Dev& dev_;
+        device_type& dev_;
         fulla::core::byte_span all_data_;
         frame_span frames_;
         std::unordered_map<PID, frame*> page_map_;
