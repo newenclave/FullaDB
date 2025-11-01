@@ -13,6 +13,7 @@
 #include "fulla/bpt/tree.hpp"
 #include "fulla/bpt/policies.hpp"
 #include "fulla/bpt/memory/model.hpp"
+#include "fulla/bpt/ranges.hpp"
 
 using namespace fulla::bpt;
 using namespace fulla::bpt::policies;
@@ -27,7 +28,7 @@ template <typename Tree>
 static std::vector<std::pair<typename Tree::key_out_type, typename Tree::value_out_type>>
 collect_all(const Tree& t) {
     std::vector<std::pair<typename Tree::key_out_type, typename Tree::value_out_type>> out;
-    for (auto it = t.begin(); it != t.end(); ++it) {
+    for (auto &it: t) {
         out.emplace_back(it->first, it->second);
     }
     return out;
@@ -63,9 +64,9 @@ TEST_CASE("memory B+Tree: basic insert & find") {
 
     // monotonic iteration
     int prev = -1;
-    for (auto it = t.begin(); it != t.end(); ++it) {
-        CHECK(prev < it->first.get()); // KeyOut should expose a getter or comparable view
-        prev = it->first.get();
+    for (auto &it: t) {
+        CHECK(prev < it.first.get()); // KeyOut should expose a getter or comparable view
+        prev = it.first.get();
     }
 }
 
@@ -106,17 +107,12 @@ TEST_CASE("memory B+Tree: erase semantics and iterator behavior") {
         CHECK(t.find(key_like_type{ last_key }) == t.end());
     }
 
-    const auto cmp = [](int lhs, int rhs) {
-        return typename Model::less_type{}(lhs, rhs);
-    };
-    
-    const auto element_proj = [](const Tree::iterator::value_type& kv) {
-        return kv.first.get(); 
-    };
+    const auto cmp = ranges::make_key_comp<Model>();
+    const auto element_proj = ranges::make_element_key_proj(t);
 
     // erase a middle element and verify ordering
     {
-        auto it = std::ranges::lower_bound(t, 73, cmp, element_proj);
+        auto it = std::ranges::lower_bound(t, key_like_type{ 73 }, cmp, element_proj);
         REQUIRE(it != t.end());
         int k = it->first.get();
         auto after = std::next(it);
@@ -243,8 +239,8 @@ TEST_CASE("memory B+Tree vs std::map: randomized insert/erase equivalence (deter
             // collect keys from tree
             std::vector<int> tkeys;
             tkeys.reserve(ref.size());
-            for (auto it = t.begin(); it != t.end(); ++it) {
-                tkeys.push_back(it->first.get());
+            for (auto &it: t) {
+                tkeys.push_back(it.first.get());
             }
             // collect keys from std::map
             std::vector<int> rkeys;

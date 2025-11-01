@@ -7,7 +7,7 @@
  */
 
 #pragma once
-#include <vector>
+
 #include "fulla/bpt/concepts.hpp"
 #include "fulla/bpt/memory/containter.hpp"
 
@@ -18,7 +18,7 @@ namespace fulla::bpt::memory {
 
         using key_type = KeyT;
         using value_type = ValueInT;
-        using less_type = LessT;
+        using less_in_type = LessT;
 
         struct key_like_type {
             explicit key_like_type(const key_type& val) : v(&val) {};
@@ -108,7 +108,13 @@ namespace fulla::bpt::memory {
             bool operator()(const key_type& l, const key_type& r) const {
                 return less(l, r);
             }
+
+            bool operator()(const key_like_type& l, const key_like_type& r) const {
+                return less(l.get(), r.get());
+            }
         };
+
+        using less_type = cmp;
 
         using base_container = container::base<node_id_type, key_type, KeysMax>;
         using inode_container = container::inode<node_id_type, key_type, KeysMax>;

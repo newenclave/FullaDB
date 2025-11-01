@@ -22,11 +22,13 @@ namespace fulla::bpt {
 
     public:
         using model_type = ModelT;
+
         using accessor_type = typename model_type::accessor_type;
         
         using key_out_type = typename model_type::key_out_type;
         using key_like_type = typename model_type::key_like_type;
         using key_borrow_type = typename model_type::key_borrow_type;
+
         using value_in_type = typename model_type::value_in_type;
         using value_out_type = typename model_type::value_out_type;
         using value_borrow_type = typename model_type::value_borrow_type;
@@ -657,6 +659,7 @@ namespace fulla::bpt {
             }
         }
 
+#pragma region "borrowing and giving"
         //region borrowing and giving
         //      LEAF
         bool leaf_borrow_from_left(leaf_type& node, std::size_t additional_elements) {
@@ -1004,7 +1007,9 @@ namespace fulla::bpt {
         }
 
         //endregion borrowing and giving
+#pragma endregion "borrowing and giving"
 
+#pragma region "merging"        
         //region merging
 
         leaf_type merge_leaf_with_right(leaf_type& node) {
@@ -1117,6 +1122,7 @@ namespace fulla::bpt {
         }
 
         //endregion merging
+#pragma endregion "merging"        
 
         node_id_type get_leftmost_leaf(node_id_type id) const {
 
@@ -1249,21 +1255,6 @@ namespace fulla::bpt {
             const auto pos = find_child_index_in_parent(parent, node.self());
             if (pos != npos && pos > 0) {
                 parent.update_key(pos - 1, model_.key_out_as_like(node.get_key(0)));
-            }
-        }
-
-        template <typename F>
-        void foreach_values(F&& f) {
-            auto& accessor = get_accessor();
-            auto [root_id, exists] = accessor.load_root();
-            if (exists) {
-                auto leaf = accessor.load_leaf(get_leftmost_leaf(root_id));
-                while (leaf.is_valid()) {
-                    for (std::size_t i = 0; i < leaf.keys_count(); i++) {
-                        f(leaf.get_key(i), leaf.get_value(i));
-                    }
-                    leaf = accessor.load_leaf(leaf.get_next());
-                }
             }
         }
 
