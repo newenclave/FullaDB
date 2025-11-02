@@ -382,7 +382,8 @@ namespace fulla::bpt::memory {
         using inode_type = inode;
 
         static_assert(concepts::INode<inode, key_out_type, key_like_type, key_borrow_type>);
-        static_assert(concepts::LeafNode<leaf_node, key_out_type, key_like_type, key_borrow_type, value_out_type, value_in_type, value_borrow_type>);
+        static_assert(concepts::LeafNode<leaf_node, key_out_type, key_like_type, key_borrow_type, 
+                        value_out_type, value_in_type, value_borrow_type>);
         static_assert(concepts::NodeAccessor<accessor_type, node_id_type, inode, leaf_node>);
 
         static key_like_type key_out_as_like(key_out_type k) {

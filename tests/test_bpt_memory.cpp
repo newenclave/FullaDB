@@ -245,7 +245,9 @@ TEST_CASE("memory B+Tree vs std::map: randomized insert/erase equivalence (deter
             // collect keys from std::map
             std::vector<int> rkeys;
             rkeys.reserve(ref.size());
-            for (auto& kv : ref) { rkeys.push_back(kv.first); }
+            for (auto& kv : ref) { 
+                rkeys.push_back(kv.first);
+            }
 
             CHECK(tkeys == rkeys);
         }
