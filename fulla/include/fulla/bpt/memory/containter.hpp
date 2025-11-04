@@ -26,6 +26,7 @@ namespace fulla::bpt::memory::container {
             return static_cast<T*>(this);
         }
 
+        std::size_t cap_ = MaxElements;
         node_id_type parent_ = {};
         core::static_vector<key_type, max_elements> keys_;        
     };
@@ -38,7 +39,8 @@ namespace fulla::bpt::memory::container {
         bool is_leaf() const override {
             return false;
         }
-        core::static_vector<node_id_type, max_elements + 1> children_;
+        node_id_type last_child_;
+        core::static_vector<node_id_type, max_elements> children_;
     };
 
     template <typename NodeIdT, typename KeyT, typename valueT, std::size_t MaxElements>

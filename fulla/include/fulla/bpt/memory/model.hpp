@@ -140,11 +140,9 @@ namespace fulla::bpt::memory {
                 return std::distance(base_->keys_.begin(), itr);
             }
 
-            static std::size_t keys_maximum() noexcept { return KeysMax; }
-
-            std::size_t keys_count() const noexcept {
-                return base_->keys_.size();
-            }
+            virtual std::size_t capacity() const noexcept = 0; 
+            virtual std::size_t size() const noexcept = 0;
+            virtual bool erase(std::size_t pos) = 0;
 
             bool keys_eq(const key_like_type& lhs, const key_like_type& rhs) const noexcept {
                 return cmp{}.eq(lhs.get(), rhs.get());
@@ -158,18 +156,8 @@ namespace fulla::bpt::memory {
                 return key_borrow_type{ std::move(base_->keys_[pos]) };
             };
 
-            bool insert_key(std::size_t pos, const key_like_type &key) {
-                base_->keys_.emplace(base_->keys_.begin() + pos, key.get());
-                return true;
-            }
-
             bool update_key(std::size_t pos, const key_like_type& key) {
                 base_->keys_[pos] = key_type{ key.get() };
-                return true;
-            }
-
-            bool erase_key(std::size_t pos) {
-                base_->keys_.erase(base_->keys_.begin() + pos);
                 return true;
             }
 
@@ -199,35 +187,55 @@ namespace fulla::bpt::memory {
             {
             }
 
-            inode_container* impl() {
+            std::size_t capacity() const noexcept override { 
+                return impl()->cap_;
+            }
+
+            std::size_t size() const noexcept override {
+                return impl()->keys_.size();
+            }
+
+            inode_container* impl() noexcept {
                 return this->base_->as<inode_container>();
             }
 
-            const inode_container* impl() const {
+            const inode_container* impl() const noexcept {
                 return this->base_->as<const inode_container>();
             }
 
-            std::size_t children_count() const {
-                return impl()->children_.size();
-            }
-
             node_id_type get_child(std::size_t pos) const {
-                return impl()->children_[pos];
+                if (is_last(pos)) {
+                    return impl()->last_child_;
+                }
+                else {
+                    return impl()->children_[pos];
+                }
             }
 
-            bool insert_child(std::size_t pos, node_id_type id) {
+            bool insert_child(std::size_t pos, const key_like_type &key, node_id_type id) {
+                impl()->keys_.emplace(impl()->keys_.begin() + pos, key.get());
                 impl()->children_.emplace(impl()->children_.begin() + pos, id);
                 return true;
             }
 
             bool update_child(std::size_t pos, node_id_type id) {
-                impl()->children_[pos] = id;
+                if (is_last(pos)) {
+                    impl()->last_child_ = id;
+                }
+                else {
+                    impl()->children_[pos] = id;
+                }
                 return true;
             }
 
-            bool erase_child(std::size_t pos) {
+            bool erase(std::size_t pos) override {
+                impl()->keys_.erase(impl()->keys_.begin() + pos);
                 impl()->children_.erase(impl()->children_.begin() + pos);
                 return true;
+            }
+
+            bool is_last(std::size_t pos) const {
+                return impl()->children_.size() == pos;
             }
         };
 
@@ -240,13 +248,17 @@ namespace fulla::bpt::memory {
             {
             }
 
+            std::size_t capacity() const noexcept override { 
+                return impl()->cap_;
+            }
+
+            std::size_t size() const noexcept override {
+                return impl()->keys_.size();
+            }
+
             std::size_t key_position(const key_like_type& key) const noexcept override { // leaf impl
                 const auto itr = std::ranges::lower_bound(impl()->keys_, key.get(), cmp{});
                 return std::distance(impl()->keys_.begin(), itr);
-            }
-
-            std::size_t values_count() const noexcept {
-                return impl()->values_.size();
             }
 
             leaf_container* impl() noexcept {
@@ -265,7 +277,8 @@ namespace fulla::bpt::memory {
                 return value_borrow_type(impl()->values_[pos]);
             }
 
-            bool insert_value(std::size_t pos, value_in_type val) {
+            bool insert_value(std::size_t pos, const key_like_type &key, value_in_type val) {
+                impl()->keys_.emplace(impl()->keys_.begin() + pos, key.get());
                 impl()->values_.emplace(impl()->values_.begin() + pos, std::move(val.get()));
                 return true;
             }
@@ -275,7 +288,13 @@ namespace fulla::bpt::memory {
                 return true;
             }
 
-            bool erase_value(std::size_t pos) {
+            bool erase(std::size_t pos) override {
+                impl()->keys_.erase(impl()->keys_.begin() + pos);
+                impl()->values_.erase(impl()->values_.begin() + pos);
+                return true;
+            }
+
+            bool erase_value_(std::size_t pos) {
                 impl()->values_.erase(impl()->values_.begin() + pos);
                 return true;
             }
@@ -296,7 +315,7 @@ namespace fulla::bpt::memory {
                 return impl()->prev_;
             }
         };
-
+        
         struct accessor_type {
 
             using node_id_type = model::node_id_type;
@@ -422,4 +441,4 @@ namespace fulla::bpt::memory {
         accessor_type accessor_;
     };
 
-} // namespace fulla::bpt
+} // namespace fulla::bpt::memory

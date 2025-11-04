@@ -10,13 +10,13 @@
 #include <concepts>
 
 namespace fulla::bpt::concepts {
-
     template <typename NodeT, typename KeyOutT, typename KeyLikeT, typename KeyBorrowT>
     concept NodeKeys = requires (NodeT n, std::size_t i, const KeyLikeT &k) {
         typename NodeT::node_id_type;
+
         // Capacity
-        { n.keys_maximum() } -> std::convertible_to<std::size_t>;
-        { n.keys_count() } -> std::convertible_to<std::size_t>;
+        { n.capacity() } -> std::convertible_to<std::size_t>;
+        { n.size() } -> std::convertible_to<std::size_t>;
 
         // Search and comparison
         { n.key_position(k) } -> std::convertible_to<std::size_t>;
@@ -27,8 +27,7 @@ namespace fulla::bpt::concepts {
         { n.borrow_key(i) } -> std::convertible_to<KeyBorrowT>;
 
         // Modification
-        { n.insert_key(i, k) } -> std::convertible_to<bool>;
-        { n.erase_key(i) } -> std::convertible_to<bool>;
+        { n.erase(i) } -> std::convertible_to<bool>;
         { n.update_key(i, k) } -> std::convertible_to<bool>;
 
         // Check
@@ -43,13 +42,11 @@ namespace fulla::bpt::concepts {
 
     template <typename INodeT, typename KeyOutT, typename KeyLikeT, typename KeyBorrowT>
     concept INode = NodeKeys<INodeT, KeyOutT, KeyLikeT, KeyBorrowT> 
-        && requires(INodeT n, std::size_t pos) {
+        && requires(INodeT n, const KeyLikeT &key, std::size_t pos) {
 
-        { n.children_count() } -> std::convertible_to<std::size_t>;
         { n.get_child(pos) } -> std::convertible_to<typename INodeT::node_id_type>;
 
-        { n.insert_child(pos, typename INodeT::node_id_type{}) } -> std::convertible_to<bool>;
-        { n.erase_child(pos) } -> std::convertible_to<bool>;
+        { n.insert_child(pos, key, typename INodeT::node_id_type{}) } -> std::convertible_to<bool>;
         { n.update_child(pos, typename INodeT::node_id_type{}) } -> std::convertible_to<bool>;
 
     };
@@ -57,14 +54,12 @@ namespace fulla::bpt::concepts {
     template <typename LeafNodeT, typename KeyOutT, typename KeyLikeT, typename KeyBorrowT, 
                 typename ValueOutT, typename ValueInT, typename ValueBorrowT>
     concept LeafNode = NodeKeys<LeafNodeT, KeyOutT, KeyLikeT, KeyBorrowT> 
-        && requires(LeafNodeT n, std::size_t pos, ValueInT val) {
+        && requires(LeafNodeT n, std::size_t pos, KeyLikeT key, ValueInT val) {
 
-        { n.values_count() } -> std::convertible_to<std::size_t>;
         { n.get_value(pos) } -> std::convertible_to<ValueOutT>;
         { n.borrow_value(pos) } -> std::convertible_to<ValueBorrowT>;
 
-        { n.insert_value(pos, val) } -> std::convertible_to<bool>;
-        { n.erase_value(pos) } -> std::convertible_to<bool>;
+        { n.insert_value(pos, key, val) } -> std::convertible_to<bool>;
         { n.update_value(pos, val) } -> std::convertible_to<bool>;
 
         // next/prev leafs
@@ -129,14 +124,14 @@ namespace fulla::bpt::concepts {
             { m.value_borrow_as_in(vbor) } -> std::convertible_to<typename ModelT::value_in_type>;
         };
 
-        requires concepts::NodeAccessor<
+        requires NodeAccessor<
             typename ModelT::accessor_type,
             typename ModelT::node_id_type,
             typename ModelT::inode_type,
             typename ModelT::leaf_type
         >;
 
-        requires concepts::LeafNode<
+        requires LeafNode<
             typename ModelT::leaf_type,
             typename ModelT::key_out_type,
             typename ModelT::key_like_type,
@@ -146,7 +141,7 @@ namespace fulla::bpt::concepts {
             typename ModelT::value_borrow_type
         >;
 
-        requires concepts::INode<
+        requires INode<
             typename ModelT::inode_type,
             typename ModelT::key_out_type,
             typename ModelT::key_like_type,
