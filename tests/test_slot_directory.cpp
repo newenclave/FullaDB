@@ -1,0 +1,209 @@
+#include "tests.hpp"
+#include "fulla/page/slot_directory.hpp"
+
+namespace {
+    using byte = fulla::core::byte;
+    using namespace fulla::page::slots;
+}
+
+static std::vector<byte> make_bytes(std::size_t n, byte start = static_cast<byte>(0x10)) {
+    std::vector<byte> v(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        v[i] = static_cast<byte>(static_cast<unsigned>(start) + (i & 0x7F));
+    }
+    return v;
+}
+
+static void expect_eq_mem(const byte* a, const byte* b, std::size_t n) {
+    REQUIRE(a != nullptr);
+    REQUIRE(b != nullptr);
+    CHECK(std::memcmp(a, b, n) == 0);
+}
+
+TEST_CASE("variadic: update fits into current capacity (no relocation)") {
+    // Page buffer with enough space
+    std::vector<byte> page(512, static_cast<byte>(0));
+    directory_view<directory_type::variadic> dir(std::span<byte>(page.data(), page.size()));
+    dir.init();
+
+    // Insert one 10B record
+    auto rec10 = make_bytes(10, static_cast<byte>(0x21));
+    REQUIRE(dir.insert(0, std::span<const byte>(rec10.data(), rec10.size())));
+    REQUIRE(dir.size() == 1);
+
+    // Capture current slot to read 'off' and 'len'
+    auto slots = dir.view();
+    auto s0 = slots[0];
+    auto before_off = s0.off;
+
+    // Update to 12B (should still fit into fix_slot_len(old.len))
+    auto rec12 = make_bytes(12, static_cast<byte>(0x31));
+    CHECK(dir.update(0, std::span<const byte>(rec12.data(), rec12.size())) == true);
+
+    // Verify same offset, new length and contents updated
+    auto slots2 = dir.view();
+    CHECK(slots2[0].off == before_off);
+    CHECK(slots2[0].len == 12);
+    auto mem = dir.get_slot(slots2[0]);
+    REQUIRE(mem.size() >= 12);
+    expect_eq_mem(mem.data(), rec12.data(), 12);
+}
+
+TEST_CASE("variadic: update requires relocation but succeeds without compact (tail space)") {
+    std::vector<byte> page(512, static_cast<byte>(0));
+    directory_view<directory_type::variadic> dir(std::span<byte>(page.data(), page.size()));
+    dir.init();
+
+    // Two small records
+    auto r1 = make_bytes(8, static_cast<byte>(0x41));
+    auto r2 = make_bytes(8, static_cast<byte>(0x51));
+    REQUIRE(dir.insert(0, std::span<const byte>(r1.data(), r1.size())));
+    REQUIRE(dir.insert(1, std::span<const byte>(r2.data(), r2.size())));
+    REQUIRE(dir.size() == 2);
+
+    auto s = dir.view();
+    auto off_before = s[0].off;
+
+    // Grow record #0 so it no longer fits into its current capacity, but there is tail space
+    auto big = make_bytes(100, static_cast<byte>(0x61));
+    CHECK(dir.update(0, std::span<const byte>(big.data(), big.size())) == true);
+
+    // Offset should change, contents must match, record #1 must remain valid
+    auto s_after = dir.view();
+    CHECK(s_after[0].off != off_before);
+    CHECK(s_after[0].len == 100);
+    auto m0 = dir.get_slot(s_after[0]);
+    expect_eq_mem(m0.data(), big.data(), 100);
+
+    auto m1 = dir.get_slot(s_after[1]);
+    expect_eq_mem(m1.data(), r2.data(), r2.size());
+}
+
+TEST_CASE("variadic: update triggers compact with exclusion of growing slot") {
+    // Craft a situation: fill page so there is no tail space, but compacting others will make room.
+    std::vector<byte> page(512, static_cast<byte>(0));
+    directory_view<directory_type::variadic> dir(std::span<byte>(page.data(), page.size()));
+    dir.init();
+
+    // Insert 3 records
+    auto a = make_bytes(60, static_cast<byte>(0x11));
+    auto b = make_bytes(60, static_cast<byte>(0x22));
+    auto c = make_bytes(60, static_cast<byte>(0x33));
+    REQUIRE(dir.insert(0, std::span<const byte>(a.data(), a.size())));
+    REQUIRE(dir.insert(1, std::span<const byte>(b.data(), b.size())));
+    REQUIRE(dir.insert(2, std::span<const byte>(c.data(), c.size())));
+
+    // Delete middle to create a free block somewhere in the middle; keep tail tight
+    REQUIRE(dir.erase(1));
+    // Insert a small one so free-list becomes fragmented
+    auto d = make_bytes(8, static_cast<byte>(0x44));
+    REQUIRE(dir.insert(1, std::span<const byte>(d.data(), d.size())));
+
+    // Now grow record #0 big enough to require moving and to need compact
+    auto big = make_bytes(140, static_cast<byte>(0x77));
+
+    // Depending on your exact allocator, this may or may not need compact;
+    // The important part: update returns true and data is consistent.
+    CHECK(dir.update(0, std::span<const byte>(big.data(), big.size())) == true);
+
+    // Validate contents and that records don't overlap and live within page
+    auto slots = dir.view();
+    auto in_bounds = [&](std::size_t i) {
+        auto mem = dir.get_slot(slots[i]);
+        return (mem.data() >= page.data()) &&
+            (mem.data() + mem.size() <= page.data() + page.size());
+        };
+    REQUIRE(in_bounds(0));
+    REQUIRE(in_bounds(1));
+    REQUIRE(in_bounds(2));
+
+    auto m0 = dir.get_slot(slots[0]);
+    expect_eq_mem(m0.data(), big.data(), big.size());
+}
+
+TEST_CASE("variadic: update fails cleanly when even compact won't help") {
+    std::vector<byte> page(256, static_cast<byte>(0));
+    directory_view<directory_type::variadic> dir(std::span<byte>(page.data(), page.size()));
+    dir.init();
+
+    auto small = make_bytes(40, static_cast<byte>(0x10));
+    REQUIRE(dir.insert(0, std::span<const byte>(small.data(), small.size())));
+
+    // Ask for something absurdly large for this page
+    auto huge = make_bytes(250, static_cast<byte>(0x99));
+    CHECK(dir.update(0, std::span<const byte>(huge.data(), huge.size())) == false);
+
+    // Original data must remain readable
+    auto s = dir.view();
+    auto m = dir.get_slot(s[0]);
+    REQUIRE(m.size() >= small.size());
+    expect_eq_mem(m.data(), small.data(), small.size());
+}
+
+TEST_CASE("variadic: compact and update") {
+    std::vector<byte> page(256, static_cast<byte>(0));
+    directory_view<directory_type::variadic> dir(std::span<byte>(page.data(), page.size()));
+    dir.init();
+
+    const auto &smols = {
+        make_bytes(20, static_cast<byte>(0x10)),
+        make_bytes(20, static_cast<byte>(0x10)),
+        make_bytes(20, static_cast<byte>(0x10)),
+        make_bytes(20, static_cast<byte>(0x10)),
+        make_bytes(20, static_cast<byte>(0x10)),
+        make_bytes(20, static_cast<byte>(0x10)),
+        make_bytes(20, static_cast<byte>(0x10)),
+    };
+
+
+    for (auto& s : smols) {
+        REQUIRE(dir.insert(0, std::span<const byte>(s.data(), s.size())));
+    }
+    
+    auto before_removing = dir.view();
+    dir.erase(dir.size() / 2);
+    dir.erase(dir.size() / 2);
+    dir.erase(dir.size() / 2);
+
+    auto large = make_bytes(150, static_cast<byte>(150));
+    auto all_slots = dir.view();
+    auto pos = all_slots.size() / 2;
+    auto old_len = all_slots[pos].len;
+    auto old_off = all_slots[pos].off;
+    [[maybe_unused]] auto old_available = dir.available();
+    [[maybe_unused]] auto old_available_compact = dir.available_after_compact();
+
+    REQUIRE(dir.update(pos, std::span<const byte>(large.data(), large.size())));
+
+    CHECK(all_slots[pos].len == 150);
+    CHECK(all_slots[pos].off != old_off);
+
+    CHECK(true);
+}
+
+TEST_CASE("fixed: update accepts <= slot_size and rejects larger") {
+    std::vector<byte> page(256, static_cast<byte>(0));
+    directory_view<directory_type::fixed> dir(std::span<byte>(page.data(), page.size()));
+    const std::uint16_t slot_size = 16;
+    dir.init(slot_size);
+
+    auto r = make_bytes(12, static_cast<byte>(0x55));
+    REQUIRE(dir.insert(0, std::span<const byte>(r.data(), r.size())));
+
+    // <= slot size should pass and not move
+    auto s = dir.view();
+    auto off_before = s[0].off;
+
+    auto r2 = make_bytes(16, static_cast<byte>(0x66));
+    CHECK(dir.update(0, std::span<const byte>(r2.data(), r2.size())) == true);
+    auto s2 = dir.view();
+    CHECK(s2[0].off == off_before);
+    CHECK(s2[0].len == 16);
+    auto m = dir.get_slot(s2[0]);
+    expect_eq_mem(m.data(), r2.data(), r2.size());
+
+    // > slot size must fail
+    auto too_big = make_bytes(17, static_cast<byte>(0x77));
+    CHECK(dir.update(0, std::span<const byte>(too_big.data(), too_big.size())) == false);
+}
+

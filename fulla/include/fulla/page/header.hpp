@@ -25,7 +25,7 @@ namespace fulla::page {
         undefined    = 0,
         heap         = 1,
         btree_leaf   = 2,
-        btree_inner  = 3,
+        btree_inode  = 3,
         long_store   = 4,
     };
 

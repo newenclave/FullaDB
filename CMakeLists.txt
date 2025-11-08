@@ -43,6 +43,7 @@ if (FULLADB_BUILD_TESTS)
         tests/test_file_device.cpp
         tests/test_buffer_manager.cpp
         tests/test_bpt_memory.cpp
+        tests/test_slot_directory.cpp
     )
     target_link_libraries(tests PRIVATE fulladb)
 
