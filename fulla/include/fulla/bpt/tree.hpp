@@ -49,7 +49,6 @@ namespace fulla::bpt {
             using iterator_category = std::bidirectional_iterator_tag;
             using reference = const value_type&;
             using pointer = const value_type*;
-            using iterator_category = std::bidirectional_iterator_tag;
             using iterator_concept = std::bidirectional_iterator_tag;
         public:
 
