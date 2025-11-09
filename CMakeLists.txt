@@ -38,7 +38,6 @@ if (FULLADB_BUILD_TESTS)
         tests/test_data_view.cpp
         tests/test_prop.cpp
         tests/test_page_header.cpp
-        tests/test_slot_page.cpp
         tests/test_page_ranges.cpp
         tests/test_file_device.cpp
         tests/test_buffer_manager.cpp

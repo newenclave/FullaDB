@@ -3,41 +3,64 @@
 #include "fulla/page/header.hpp"
 #include "fulla/page/slot_page.hpp"
 #include "fulla/page/ranges.hpp"
+#include "fulla/page/slot_directory.hpp"
 #include "fulla/codec/prop.hpp"
 #include "fulla/codec/data_view.hpp"
+
 
 using namespace fulla::core;
 using namespace fulla::page;
 using namespace fulla::codec;
 using namespace fulla::codec::prop;
 
-static std::vector<byte> make_blank_page(std::size_t ps) {
+static std::vector<byte> make_blank_page(std::size_t ps, std::size_t subhdr_size = 4) {
     std::vector<byte> buf(ps);
     auto* hdr = reinterpret_cast<page_header*>(buf.data());
-    hdr->init(page_kind::heap, ps, 1);
+    hdr->init(page_kind::heap, static_cast<std::uint32_t>(ps), 1, subhdr_size);
     return buf;
 }
 
 TEST_SUITE("page/ranges") {
+
+    TEST_CASE("check view data") {
+        using slot_dir_type = slots::variadic_directory_view<>;
+        auto buf = make_blank_page(500, 12);
+        page_view<slot_dir_type> pv{ buf };
+
+        const auto expected_base = static_cast<std::uint16_t>(sizeof(page_header) + 12);
+        const auto expected_cap = buf.size() - expected_base;
+        CHECK(pv.base_off() == expected_base);
+        CHECK(pv.base_ptr() == buf.data() + expected_base);
+        CHECK(pv.capacity() == expected_cap);
+        
+        auto slots = pv.get_slots_dir();
+        slots.init();
+        CHECK(slots.available() == (pv.capacity() - sizeof(slot_dir_type::directory_header)));
+    }
+
     TEST_CASE("lower_bound over slots with projection & record_less") {
+        using slot_dir_type = slots::variadic_directory_view<>;
         auto buf = make_blank_page(4096);
-        page_view pv{buf};
+        page_view<slot_dir_type> pv{buf};
+        pv.get_slots_dir().init();
 
         // Insert sorted keys: "a", "b", "d"
         auto ra = make_record(str{"a"});
         auto rb = make_record(str{"b"});
         auto rd = make_record(str{"d"});
 
-        CHECK(pv.insert(ra.view()).ok);
-        CHECK(pv.insert(rb.view()).ok);
-        CHECK(pv.insert(rd.view()).ok);
+        auto slots_dir = pv.get_slots_dir();
 
-        auto slots = pv.slot_dir_view();
+        CHECK(slots_dir.insert(slots_dir.size(), ra.view()));
+        CHECK(slots_dir.insert(slots_dir.size(), rb.view()));
+        CHECK(slots_dir.insert(slots_dir.size(), rd.view()));
+
+        auto slots = slots_dir.view();
         CHECK(slots.size() == 3);
 
-        const auto av = pv.get_slot(slots[0]);
-        const auto bv = pv.get_slot(slots[1]);
-        const auto dv = pv.get_slot(slots[2]);
+        const auto av = slots_dir.get_slot(slots[0]);
+        const auto bv = slots_dir.get_slot(slots[1]);
+        const auto dv = slots_dir.get_slot(slots[2]);
 
         auto proj  = make_slot_projection(pv);
         auto less  = make_record_less();
@@ -46,12 +69,12 @@ TEST_SUITE("page/ranges") {
         auto key = make_record(str{"c"});
         auto it = std::ranges::lower_bound(slots, key.view(), less, proj);
         CHECK(it != slots.end());
-        CHECK(fulla::codec::data_view::compare(pv.get_slot(*it), rd.view()) == std::partial_ordering::equivalent);
+        CHECK(fulla::codec::data_view::compare(slots_dir.get_slot(*it), rd.view()) == std::partial_ordering::equivalent);
 
         // Search for "b" -> should point to "b"
         auto key2 = make_record(str{"b"});
         auto it2 = std::ranges::lower_bound(slots, key2.view(), less, proj);
         CHECK(it2 != slots.end());
-        CHECK(fulla::codec::data_view::compare(pv.get_slot(*it2), rb.view()) == std::partial_ordering::equivalent);
+        CHECK(fulla::codec::data_view::compare(slots_dir.get_slot(*it2), rb.view()) == std::partial_ordering::equivalent);
     }
 }

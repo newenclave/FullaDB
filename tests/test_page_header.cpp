@@ -17,13 +17,14 @@ TEST_SUITE("page/header") {
         CHECK(static_cast<std::uint16_t>(hdr->slots) == 0);
 
         const auto base = static_cast<std::uint16_t>(sizeof(page_header) + 12);
-        CHECK(static_cast<std::uint16_t>(hdr->slots_offset) == base);
-        CHECK(static_cast<std::uint16_t>(hdr->free_beg) == base);
-        CHECK(static_cast<std::uint16_t>(hdr->free_end) == PS);
+        const auto expected_capacity = (PS - base);
+        CHECK(static_cast<std::uint16_t>(hdr->base()) == base);
+        CHECK(static_cast<std::uint16_t>(hdr->capacity()) == expected_capacity);
+        CHECK(static_cast<std::uint16_t>(hdr->page_end) == PS);
         CHECK(static_cast<std::uint32_t>(hdr->self_pid) == 123);
         CHECK(static_cast<std::uint32_t>(hdr->crc) == 0);
 
         CHECK(hdr->data() == reinterpret_cast<fulla::core::byte*>(hdr));
-        CHECK(page_header::header_size() == 20);
+        CHECK(page_header::header_size() == 16);
     }
 }

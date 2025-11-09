@@ -19,10 +19,41 @@ namespace fulla::page::slots {
     using core::byte_view;
     using core::byte_buffer;
 
+    constexpr static const typename core::word_u16::word_type SLOT_INVALID =
+        std::numeric_limits<typename core::word_u16::word_type>::max();
+    constexpr static const auto SLOT_FREE = SLOT_INVALID;
+
+    template <typename SdT>
+    concept SlotDirectoryConcept = requires(SdT sdt, std::size_t pos, byte_view bv) {
+        typename SdT::slot_type;
+        typename SdT::directory_header;
+
+        { sdt.size() } -> std::convertible_to<std::size_t>;
+
+        { sdt.insert(pos, bv) } -> std::convertible_to<bool>;
+        { sdt.update(pos, bv) } -> std::convertible_to<bool>;
+        { sdt.erase(pos) } -> std::convertible_to<bool>;
+
+        { sdt.possible_insert(std::size_t{}) } -> std::convertible_to<bool>;
+
+        { sdt.available() } -> std::convertible_to<std::size_t>;
+        { sdt.available_after_compact() } -> std::convertible_to<std::size_t>;
+
+        { sdt.compact(std::span<typename SdT::slot_type*>{}) } -> std::convertible_to<bool>;
+
+        { sdt.view() } -> std::convertible_to<std::span<const typename SdT::slot_type>>;
+        { sdt.get_slot(std::size_t{}) } -> std::convertible_to<byte_span>;
+    };
+
 	enum class directory_type {
 		variadic,
 		fixed,
 	};
+
+    struct slot_entry {
+        word_u16 off;
+        word_u16 len;
+    };
 
     namespace fixed {
         struct header {
@@ -30,11 +61,6 @@ namespace fulla::page::slots {
             word_u16 free_beg{ 0 };     // offset to the first free byte in payload area (grows upward)
             word_u16 free_end{ 0 };     // offset to the last free byte+1 from the end (grows downward)
             word_u16 freed;             // first freed slot.
-        };
-
-        struct slot_type {
-            word_u16 off;
-            word_u16 len;
         };
 
         struct free_slot_type {
@@ -50,11 +76,6 @@ namespace fulla::page::slots {
             word_u16 freed;             // first freed slot.
         };
 
-        struct slot_type {
-            word_u16 off;
-            word_u16 len;
-        };
-
         struct free_slot_type {
             word_u16 prev;
             word_u16 next;
@@ -68,13 +89,11 @@ namespace fulla::page::slots {
     public:
 
         using word16_type = word_u16::word_type;
+
         constexpr static const std::size_t align_val = AlignV;
         constexpr static const bool is_fixed = (Type == directory_type::fixed);
 
-        using slot_type = std::conditional_t <is_fixed,
-            fixed::slot_type,
-            variadic::slot_type
-        >;
+        using slot_type = slot_entry;
 
         using free_slot_type = std::conditional_t <is_fixed,
             fixed::free_slot_type,
@@ -111,14 +130,6 @@ namespace fulla::page::slots {
             header().free_beg = base_begin();
             header().free_end = base_end();
             header().freed = 0;
-        }
-
-        directory_header& header() {
-            return *reinterpret_cast<directory_header*>(body_.data());
-        }
-
-        const directory_header& header() const {
-            return *reinterpret_cast<const directory_header*>(body_.data());
         }
 
         cslot_span view() const {
@@ -177,7 +188,7 @@ namespace fulla::page::slots {
                 }
             }
             const auto slot_overhead = need_slot ? sizeof(slot_type) : 0;
-            if (find_free_slot(len) != nullptr) {
+            if ((available() >= slot_overhead) && (find_free_slot(len) != nullptr)) {
                 return true;
             }
             return available_for(len, need_slot);
@@ -252,7 +263,7 @@ namespace fulla::page::slots {
                 // mark as "absent" to reclaim its old space by compact()
                 auto size_after_compact = static_cast<std::size_t>(available_after_compact()) + cur_cap;
                 if (size_after_compact >= new_cap) {
-                    s.off = 0;
+                    s.off = SLOT_INVALID;
                     if (compact()) {
                         auto new_mem = allocate_space(data.size());
                         if (!new_mem.empty()) {
@@ -291,7 +302,7 @@ namespace fulla::page::slots {
             std::size_t count = 0;
             if (all.size() <= external.size()) {
                 for (auto &a: all) {
-                    if ((a.off != 0) && (a.len > 0)) {
+                    if ((a.off != SLOT_INVALID) && (a.len > 0)) {
                         external[count++] = &a;
                     }
                 }
@@ -323,10 +334,82 @@ namespace fulla::page::slots {
         }
 
         byte_span get_slot(slot_type s) {
-            return { body_.data() + s.off, s.len };
+            if (validate_slot(s)) {
+                return { body_.data() + s.off, s.len };
+            }
+            return {};
         }
 
-        private:
+        bool validate() const {
+            const auto& h = header();
+            if (!((sizeof(directory_header) <= h.free_beg) &&
+                (h.free_beg <= h.free_end) &&
+                (h.free_end <= body_.size()))) {
+                return false;
+            }
+
+            const auto dir = view();
+            for (std::uint16_t i = 0; i < size(); ++i) {
+                const std::uint16_t off = dir[i].off;
+                const std::uint16_t len = dir[i].len;
+
+                if ((off == SLOT_FREE) && (len == 0)) {
+                    continue;
+                }
+                if (off < h.free_end) {
+                    return false;
+                }
+                if (static_cast<std::size_t>(off) + static_cast<std::size_t>(len) > body_.size()) {
+                    return false;
+                }
+            }
+
+            const std::uint16_t expected_fb = static_cast<std::uint16_t>(sizeof(directory_header) + slot_dir_size());
+
+            if (h.free_beg != expected_fb) {
+                return false;
+            }
+
+            return true;
+        }
+
+    private:
+
+        bool validate_slot(slot_type s) {
+            const auto& h = header();
+            const std::size_t page_sz = body_.size();
+
+            if (s.off == SLOT_INVALID || s.len == 0) {
+                return {};
+            }
+            const std::size_t off = static_cast<std::size_t>(s.off);
+            const std::size_t len = static_cast<std::size_t>(s.len);
+
+            if (off < h.free_end) {
+                return false;
+            }
+            if (off + len > page_sz) {
+                return false;
+            }
+            const std::size_t low_limit = sizeof(directory_header) + slot_dir_size();
+
+            if (off < low_limit) {
+                return false;
+            }
+            return true;
+        }
+
+        std::size_t slot_dir_size() const {
+            return size() * sizeof(slot_type);
+        }
+
+        directory_header& header() {
+            return *reinterpret_cast<directory_header*>(body_.data());
+        }
+
+        const directory_header& header() const {
+            return *reinterpret_cast<const directory_header*>(body_.data());
+        }
 
         void push_free_slot(free_slot_ptr fs, std::size_t len) {
             fs->next = header().freed;
@@ -524,11 +607,15 @@ namespace fulla::page::slots {
         std::span<byte> body_;
     };
 
+
     template <std::size_t AlignV = 4>
     using fixed_directory_view = directory_view<directory_type::fixed>;
 
     template <std::size_t AlignV = 4>
     using variadic_directory_view = directory_view<directory_type::variadic>;
+
+    static_assert(SlotDirectoryConcept<fixed_directory_view<>>);
+    static_assert(SlotDirectoryConcept<variadic_directory_view<>>);
 
     template <typename DirDst, typename DirSrc>
     inline std::size_t merge_need_bytes(const DirDst& dst, const DirSrc& src) {

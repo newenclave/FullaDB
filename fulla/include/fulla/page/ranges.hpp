@@ -28,13 +28,14 @@ namespace fulla::page {
 
     // Projection: slot_entry -> byte_view through a page_view.
     // Stores a pointer to page_view; safe as long as the page_view outlives this functor.
+    template<slots::SlotDirectoryConcept SdT>
     struct slot_projection {
-        const page_view* pv{nullptr};
+        const page_view<SdT>* pv{nullptr};
 
-        explicit slot_projection(const page_view& ref) noexcept : pv(&ref) {}
+        explicit slot_projection(const page_view<SdT>& ref) noexcept : pv(&ref) {}
 
-        byte_view operator()(const page_view::slot_entry& se) const noexcept {
-            auto const result = pv->get_slot(se);
+        byte_view operator()(const slots::slot_entry& se) const noexcept {
+            auto const result = pv->get_slots_dir().get_slot(se);
             return result;
         }
     };
@@ -44,7 +45,8 @@ namespace fulla::page {
         return record_less{};
     }
 
-    inline slot_projection make_slot_projection(const page_view& pv) noexcept {
+    template<slots::SlotDirectoryConcept SdT>
+    inline slot_projection<SdT> make_slot_projection(const page_view<SdT>& pv) noexcept {
         return slot_projection{pv};
     }
 

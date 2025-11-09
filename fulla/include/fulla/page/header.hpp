@@ -36,11 +36,8 @@ namespace fulla::page {
         word_u16 kind {0};         // page_kind
         word_u16 slots {0};        // number of occupied slot entries
 
-        word_u16 free_beg {0};     // offset to the first free byte in payload area (grows upward)
-        word_u16 free_end {0};     // offset to the last free byte+1 from the end (grows downward)
-
-        word_u16 slots_offset {0}; // start offset of the slot array (from page begin)
-        word_u16 subhdr_size {0};  // size of type-specific subheader right after page_header
+        word_u16 subhdr_size{ 0 }; // size of type-specific subheader right after page_header
+        word_u16 page_end{ 0 };    // full page size
 
         word_u32 self_pid {0};     // optional: page id (can be eliminated if manager tracks PID)
         word_u32 crc {0};          // reserved: page checksum
@@ -50,12 +47,8 @@ namespace fulla::page {
             kind = static_cast<word_u16::word_type>(k);
             self_pid = self;
             slots = 0;
+            page_end = static_cast<word_u16::word_type>(page_size);
             subhdr_size = static_cast<word_u16::word_type>(subheader_size);
-
-            const auto base = static_cast<word_u16::word_type>(sizeof(page_header) + static_cast<std::size_t>(subhdr_size));
-            slots_offset = base;
-            free_beg = base;
-            free_end = static_cast<word_u16::word_type>(page_size);
             crc = 0;
         }
 
@@ -69,9 +62,20 @@ namespace fulla::page {
         const byte* data() const noexcept {
             return reinterpret_cast<const byte*>(this);
         }
+
+        word_u16::word_type base() const {
+            return static_cast<word_u16::word_type>(header_size() + subhdr_size);
+        }
+
+        word_u16::word_type capacity() const {
+            return page_end - static_cast<word_u16::word_type>(header_size() + subhdr_size);
+        }
+
+    private:
+
     } FULLA_PACKED;
     FULLA_PACKED_STRUCT_END
 
-    static_assert(sizeof(page_header) == 20, "page_header must be 20 bytes (packed).");
+    static_assert(sizeof(page_header) == 16, "page_header must be 16 bytes (packed).");
 
 } // namespace fulla::page
