@@ -142,6 +142,14 @@ namespace fulla::bpt::memory {
 
             virtual std::size_t capacity() const noexcept = 0; 
             virtual std::size_t size() const noexcept = 0;
+            bool is_full() const {
+                return size() >= capacity();
+            }
+
+            bool is_underflow() const {
+                return size() <= capacity() / 2;
+            }
+
             virtual bool erase(std::size_t pos) = 0;
 
             bool keys_eq(const key_like_type& lhs, const key_like_type& rhs) const noexcept {
@@ -212,6 +220,14 @@ namespace fulla::bpt::memory {
                 }
             }
 
+            bool can_insert_child(std::size_t, key_like_type, node_id_type) const noexcept {
+                return !this->is_full();
+            }
+
+            bool can_update_child(std::size_t, node_id_type) const noexcept {
+                return true;
+            }
+
             bool insert_child(std::size_t pos, const key_like_type &key, node_id_type id) {
                 impl()->keys_.emplace(impl()->keys_.begin() + pos, key.get());
                 impl()->children_.emplace(impl()->children_.begin() + pos, id);
@@ -275,6 +291,14 @@ namespace fulla::bpt::memory {
 
             value_borrow_type borrow_value(std::size_t pos) noexcept {
                 return value_borrow_type(impl()->values_[pos]);
+            }
+
+            bool can_insert_value(std::size_t, key_like_type, value_in_type) const noexcept {
+                return !this->is_full();
+            }
+
+            bool can_update_value(std::size_t, value_in_type) const noexcept {
+                return true;
             }
 
             bool insert_value(std::size_t pos, const key_like_type &key, value_in_type val) {
@@ -376,6 +400,14 @@ namespace fulla::bpt::memory {
 
             bool is_leaf_id(node_id_type id) const {
                 return valid_id(id.id) && nodes_[id.id - 1]->is_leaf();
+            }
+
+            bool can_merge_leafs(leaf_type dst, leaf_type src) const {
+                return dst.capacity() >= (dst.size() + src.size());
+            }
+
+            bool can_merge_inodes(inode_type dst, inode_type src) const {
+                return dst.capacity() >= (1 + dst.size() + src.size());
             }
 
             std::tuple<node_id_type, bool> load_root() const {

@@ -29,6 +29,9 @@ namespace fulla::page::slots {
         typename SdT::directory_header;
 
         { sdt.size() } -> std::convertible_to<std::size_t>;
+        { sdt.capacity_for(std::size_t{}) } -> std::convertible_to<std::size_t>;
+        { sdt.minumum_slot_size() } -> std::convertible_to<std::size_t>;
+        { sdt.maximum_slot_size() } -> std::convertible_to<std::size_t>;
 
         { sdt.insert(pos, bv) } -> std::convertible_to<bool>;
         { sdt.update(pos, bv) } -> std::convertible_to<bool>;
@@ -116,7 +119,7 @@ namespace fulla::page::slots {
         using cslot_span = std::span<const slot_type>;
 
         directory_view(std::span<byte> data) : body_(data) {
-            auto* p = body_.data();
+            [[maybe_unused]] auto* p = body_.data();
             assert((reinterpret_cast<std::uintptr_t>(p) % alignof(directory_header)) == 0);
         }
 
@@ -146,6 +149,31 @@ namespace fulla::page::slots {
             }
         }
 
+        std::size_t capacity_for(std::size_t slot_size) const noexcept {
+            const auto fixed_size = fixed_len(slot_size);
+            const std::size_t max_available = static_cast<std::size_t>(base_end() - base_begin());
+            return max_available / (fixed_size + sizeof(slot_type));
+        }
+        
+        std::size_t minumum_slot_size() const noexcept {
+            if constexpr (is_fixed) {
+                return header().size;
+            }
+            else {
+                return fix_slot_len(sizeof(free_slot_type));
+            }
+        }
+
+        std::size_t maximum_slot_size() const noexcept {
+            if constexpr (is_fixed) {
+                return header().size;
+            }
+            else {
+                const std::size_t max_available = static_cast<std::size_t>(base_end() - base_begin());
+                return max_available - sizeof(slot_type);
+            }
+        }
+
         word16_type available_after_compact() const {
             const std::size_t max_available = static_cast<std::size_t>(base_end() - base_begin());
             const std::size_t total_size =
@@ -160,12 +188,7 @@ namespace fulla::page::slots {
         }
 
         word16_type maximum_available_slots() const {
-            if constexpr (is_fixed) {
-                return available() / (header().size + sizeof(slot_type));
-            }
-            else {
-                return available() / fix_slot_len(sizeof(free_slot_type));
-            }
+            return available() / (minumum_slot_size() + sizeof(slot_type));
         }
 
         word16_type stored_size() const {
@@ -195,8 +218,8 @@ namespace fulla::page::slots {
             if (available_for(len, true)) {
                 return true;
             }
-            const auto after_compact = available_after_compact() - slot_overhead;
-            return after_compact >= len;
+            const auto after_compact = available_after_compact();
+            return after_compact >= (len + slot_overhead);
         }
 
         bool insert(std::size_t pos, byte_view data) {

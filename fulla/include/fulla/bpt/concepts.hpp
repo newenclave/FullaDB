@@ -17,6 +17,8 @@ namespace fulla::bpt::concepts {
         // Capacity
         { n.capacity() } -> std::convertible_to<std::size_t>;
         { n.size() } -> std::convertible_to<std::size_t>;
+        { n.is_full() } -> std::convertible_to<bool>;
+        { n.is_underflow() } -> std::convertible_to<bool>;
 
         // Search and comparison
         { n.key_position(k) } -> std::convertible_to<std::size_t>;
@@ -46,6 +48,8 @@ namespace fulla::bpt::concepts {
 
         { n.get_child(pos) } -> std::convertible_to<typename INodeT::node_id_type>;
 
+        { n.can_insert_child(pos, key, typename INodeT::node_id_type{}) } -> std::convertible_to<bool>;
+        { n.can_update_child(pos, typename INodeT::node_id_type{}) } -> std::convertible_to<bool>;
         { n.insert_child(pos, key, typename INodeT::node_id_type{}) } -> std::convertible_to<bool>;
         { n.update_child(pos, typename INodeT::node_id_type{}) } -> std::convertible_to<bool>;
 
@@ -59,6 +63,8 @@ namespace fulla::bpt::concepts {
         { n.get_value(pos) } -> std::convertible_to<ValueOutT>;
         { n.borrow_value(pos) } -> std::convertible_to<ValueBorrowT>;
 
+        { n.can_insert_value(pos, key, val) } -> std::convertible_to<bool>;
+        { n.can_update_value(pos, val) } -> std::convertible_to<bool>;
         { n.insert_value(pos, key, val) } -> std::convertible_to<bool>;
         { n.update_value(pos, val) } -> std::convertible_to<bool>;
 
@@ -74,6 +80,8 @@ namespace fulla::bpt::concepts {
         // Create:
         { a.create_leaf() }  -> std::convertible_to<LeafT>;
         { a.create_inode() } -> std::convertible_to<INodeT>;
+        { a.can_merge_leafs(LeafT{}, LeafT{}) } -> std::convertible_to<bool>;
+        { a.can_merge_inodes(INodeT{}, INodeT{}) } -> std::convertible_to<bool>;
 
         // destroy
         { a.destroy(id) } -> std::convertible_to<bool>;

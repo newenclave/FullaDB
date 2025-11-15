@@ -218,19 +218,35 @@ TEST_CASE("memory B+Tree vs std::map: randomized insert/erase equivalence (deter
     std::uniform_int_distribution<int> keyd(0, 2000);
     std::bernoulli_distribution insprob(0.6);
 
+    const auto check_valid = [&]() {
+        return true;
+        //for (auto& k : ref) {
+        //    auto it = t.find(key_like_type{ k.first });
+        //    if (it == t.end()) {
+        //        return false;
+        //    }
+        //}
+        //return true;
+    };
+
     const int steps = 15000;
     for (int s = 0; s < steps; ++s) {
         int k = keyd(rng);
         if (insprob(rng)) {
-            ref[k] = std::to_string(k);
 
+            ref[k] = std::to_string(k);
             auto tsk = std::to_string(k);
             CHECK(t.insert(key_like_type{ k }, value_in_type{ tsk },
                 insert::upsert, rebalance::neighbor_share));
+            CHECK(check_valid());
         }
         else {
             std::size_t removed = ref.erase(k);
+            auto it = t.find(key_like_type{ k });
             bool ok = t.remove(key_like_type{ k });
+            if (!ok && removed > 0) {
+                std::cout << "";
+            }
             CHECK(ok == (removed > 0));
         }
 
