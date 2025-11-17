@@ -58,11 +58,35 @@ namespace fulla::storage {
             page_handle() = default;
             page_handle(buffer_manager* pool, frame* f, std::uint32_t gen_snapshot)
                 : pool_(pool), f_(f), gen_(gen_snapshot) {
-                if (f_ != nullptr) { f_->ref_bit = true; }
+                if (f_ != nullptr) { 
+                    f_->ref_bit = true; 
+                }
             }
 
-            page_handle(const page_handle&) = delete;
-            page_handle& operator=(const page_handle&) = delete;
+            page_handle(const page_handle &other)
+                : pool_(other.pool_) 
+                , f_(other.f_)
+                , gen_(other.gen_)
+            {
+                if (f_ != nullptr) {
+                    f_->ref_bit = true;
+                    ++f_->pin;
+                }
+            };
+
+            page_handle& operator=(const page_handle &other) {
+                if (this != &other) {
+                    reset();
+                    pool_ = other.pool_;
+                    f_ = other.f_;
+                    gen_ = other.gen_;
+                    if (f_ != nullptr) {
+                        f_->ref_bit = true;
+                        ++f_->pin;
+                    }
+                }
+                return *this;
+            }
 
             page_handle(page_handle&& other) noexcept
                 : pool_(other.pool_)
@@ -72,6 +96,7 @@ namespace fulla::storage {
                 other.f_ = nullptr; 
                 other.gen_ = 0;
             }
+
             page_handle& operator=(page_handle&& other) noexcept {
                 if (this != &other) {
                     reset();
@@ -89,6 +114,18 @@ namespace fulla::storage {
 
             explicit operator bool() const noexcept { return f_ != nullptr; }
             PID id() const noexcept { return f_ ? f_->page_id : invalid_page_pid; }
+
+            friend bool operator == (const page_handle& lhs, const page_handle& rhs) {
+                if (lhs.f_ && rhs.f_) {
+                    return (lhs.pool_ == rhs.pool_)
+                        && (lhs.f_ == rhs.f_)
+                        && (lhs.gen_ == rhs.gen_)
+                        ;
+                }
+                else {
+                    return (lhs.f_ == rhs.f_);
+                }
+            }
 
             fulla::core::byte_view ro_span() const noexcept {
                 DB_ASSERT(!f_ || f_->gen == gen_, "stale handle: page was evicted/reused");
@@ -167,7 +204,8 @@ namespace fulla::storage {
             auto it = page_map_.find(pid);
             if (it != page_map_.end()) {
                 frame* f = it->second;
-                ++f->pin; f->ref_bit = true;
+                ++f->pin; 
+                f->ref_bit = true;
                 return page_handle{ this, f, f->gen };
             }
             if (auto* freef = try_take_free_frame()) {

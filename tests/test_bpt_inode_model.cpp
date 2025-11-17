@@ -3,6 +3,8 @@
 #include "fulla/bpt/paged/model.hpp"
 #include "fulla/storage/file_device.hpp"
 #include "fulla/page/header.hpp"
+#include "fulla/page/bpt_inode.hpp"
+
 #include "fulla/codec/prop.hpp"
 
 namespace {
@@ -28,15 +30,13 @@ namespace {
 		pv.header().init(fulla::page::page_kind::bpt_inode, size, 1, sizeof(fulla::page::bpt_inode_header));
 		auto sh = pv.subheader<fulla::page::bpt_inode_header>();
 		sh->init();
-		sh->rightmost_child = model_type::invalid_node_type;
+		sh->rightmost_child = model_type::invalid_node_value;
 		pv.get_slots_dir().init();
 		return result;
 	}
 
-	void validate_keys(model_type::inode_type inode) {
-
+	void validate_keys(model_type::inode_type &inode) {
 		std::optional<key_out_type> last;
-
 		auto less_type = fulla::page::make_record_less();
 		for (std::size_t i = 0; i < inode.size(); ++i) {
 			if (last.has_value()) {
@@ -44,23 +44,23 @@ namespace {
 			}
 			last = inode.get_key(i);
 		}
-
 	}
 }
 
-TEST_SUITE("bpt/page/model") {
+TEST_SUITE("bpt/page/model/inode") {
+
 	TEST_CASE("bpt::inode page create") {
 		auto page = make_inode_page(4096);
 		auto pv = page_view_type{ page };
 		auto sh = pv.subheader<fulla::page::bpt_inode_header>();
 		REQUIRE(page.size() == 4096);
-		CHECK(sh->rightmost_child == model_type::invalid_node_type);
+		CHECK(sh->rightmost_child == model_type::invalid_node_value);
 		CHECK(pv.get_slots_dir().size() == 0);
 	}
 
 	TEST_CASE("bpt::inode model inode_type") {
 		auto page = make_inode_page(4096);
-		model_type::inode_type inode(page_view_type{ page }, 100);
+		model_type::inode_type inode(page_view_type{ page }, 100, {});
 		auto slots = page_view_type{ page }.get_slots_dir();
 		CHECK_EQ(inode.self(), 100);
 		auto capacity = inode.capacity();
@@ -107,7 +107,7 @@ TEST_SUITE("bpt/page/model") {
 
 	TEST_CASE("bpt::inode model inode_type underflow") {
 		auto page = make_inode_page(4096);
-		model_type::inode_type inode(page_view_type{ page }, 100);
+		model_type::inode_type inode(page_view_type{ page }, 100, {});
 		auto slots = page_view_type{ page }.get_slots_dir();
 
 		for (auto i = 0; i < 400; i++) {
@@ -123,7 +123,23 @@ TEST_SUITE("bpt/page/model") {
 		while (!inode.is_underflow()) {
 			inode.erase(inode.size() / 2);
 		}
+
+		auto bk = inode.borrow_key(0);
+		CHECK(inode.keys_eq(key_like_type{ bk.key }, key_like_type{ inode.get_key(0).key }));
+
+		auto test_key = prop::make_record(prop::str{ "!!!updated_key_logn_long_value really long value" }, prop::ui32{(std::uint32_t)777});
+
 		CHECK(inode.size() > 0);
 		CHECK(slots.available() > slots.stored_size());
+
+		CHECK(inode.update_key(0, key_like_type{ test_key.view() }));
+		CHECK(inode.keys_eq(key_like_type{ test_key.view() }, key_like_type{ inode.get_key(0).key }));
+
+		auto zero_key = inode.get_key(0).key;
+		CHECK( std::is_eq(std::lexicographical_compare_three_way(
+			test_key.view().begin(), 
+			test_key.view().end(), 
+			zero_key.begin(), 
+			zero_key.end())));
 	}
 }

@@ -46,6 +46,8 @@ if (FULLADB_BUILD_TESTS)
         tests/test_slot_directory.cpp
         tests/test_page_bpt_header.cpp
         tests/test_bpt_inode_model.cpp
+        tests/test_bpt_leaf_model.cpp
+        tests/test_bpt_page_allocator.cpp
     )
     
     target_link_libraries(tests PRIVATE fulladb)    

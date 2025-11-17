@@ -9,6 +9,7 @@
 
 #include <filesystem>
 #include <vector>
+
 using namespace fulla::core;
 using namespace fulla::storage;
 using namespace fulla::page;
@@ -97,6 +98,15 @@ TEST_SUITE("storage/buffer_manager") {
             CHECK(bm.resident_pages() <= 2);
             auto st = bm.get_stats();
             CHECK(st.evictions >= 1);
+
+            SUBCASE("copy page_handle") {
+                auto ph = bm.fetch(id0);
+                auto ph_test0(ph);
+                auto ph_test1 = ph;
+
+                CHECK(ph_test0 == ph);
+                CHECK(ph_test1 == ph);
+            }
         }
 
         CHECK(std::filesystem::remove(path));

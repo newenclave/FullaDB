@@ -18,6 +18,8 @@
 #include "fulla/page/header.hpp"
 #include "fulla/page/page_view.hpp"
 #include "fulla/page/bpt_inode.hpp"
+#include "fulla/page/bpt_leaf.hpp"
+
 #include "fulla/page/slot_directory.hpp"
 #include "fulla/page/ranges.hpp"
 
@@ -37,10 +39,13 @@ namespace fulla::bpt::paged {
         using page_view_type = page::page_view<slot_directory_type>;
 
         using node_id_type = PidT;
-        constexpr static const node_id_type invalid_node_type = std::numeric_limits<node_id_type>::max();
+        constexpr static const node_id_type invalid_node_value = std::numeric_limits<node_id_type>::max();
 
-        constexpr static const std::size_t maximum_slot_size = 200;
-        constexpr static const std::size_t minumum_slot_size = 40;
+        constexpr static const std::size_t maximum_inode_slot_size = 200;
+        constexpr static const std::size_t minumum_inode_slot_size = 40;
+
+        constexpr static const std::size_t maximum_leaf_slot_size = 200;
+        constexpr static const std::size_t minumum_leaf_slot_size = 40;
 
         struct key_like_type {
             byte_view key;
@@ -54,63 +59,78 @@ namespace fulla::bpt::paged {
             byte_buffer key;
         };
 
+        struct value_in_type {
+            byte_view val;
+        };
+
+        struct value_out_type {
+            byte_view val;
+        };
+
+        struct value_borrow_type {
+            byte_buffer val;
+        };
+
         struct inode_key_extractor {
             byte_view operator ()(byte_view value) const noexcept {
                 const auto* slot_hdr = reinterpret_cast<const page::bpt_inode_slot*>(value.data());
                 return { value.begin() + slot_hdr->key_offset(), value.end() };
             }
         };
-        
-        inline static auto make_inode_key_projector(page_view_type &pv) {
+
+        struct leaf_key_extractor {
+            byte_view operator ()(byte_view value) const noexcept {
+                const auto* slot_hdr = reinterpret_cast<const page::bpt_leaf_slot*>(value.data());
+                return { value.begin() + slot_hdr->key_offset(), slot_hdr->key_len };
+            }
+        };
+
+        struct leaf_value_extractor {
+            byte_view operator ()(byte_view value) const noexcept {
+                const auto* slot_hdr = reinterpret_cast<const page::bpt_leaf_slot*>(value.data());
+                return { value.begin() + slot_hdr->value_offset(), value.end() };
+            }
+        };
+
+        inline static auto make_inode_key_projector(page_view_type& pv) {
             return page::make_slot_projection_with_extracor<inode_key_extractor>(pv);
         }
-        
+
+        inline static auto make_value_key_projector(page_view_type& pv) {
+            return page::make_slot_projection_with_extracor<leaf_key_extractor>(pv);
+        }
+
         inline static auto make_key_less() {
             return page::make_record_less();
         }
 
         struct node_base {
+
+            using node_id_type = node_id_type;
+
+            node_base(page_view_type page, node_id_type self_id, std::size_t min_l, std::size_t max_l, typename buffer_manager_type::page_handle hdl)
+                : page_(page)
+                , id_(self_id) 
+                , minimum_len(min_l)
+                , maximum_len(max_l)
+                , hdl_(std::move(hdl))
+            {}
+
+            node_base() = default;
+
             virtual ~node_base() = default;
 
-        };
-
-        struct leaf_type {};
-
-        struct inode_type {
-            using node_id_type = node_id_type;
-            inode_type(page_view_type page, node_id_type self_id) : page_(page), id_(self_id) {}
-
-            node_id_type self() const noexcept {
-                return id_;
-            }
-
             std::size_t capacity() const {
-                return get_slots().capacity_for(maximum_slot_size);
-            }
-
-            std::size_t size() const {
-                return get_slots().size();
+                return get_slots().capacity_for(maximum_len);
             }
 
             bool is_full() const noexcept {
-                return !get_slots().can_insert(maximum_slot_size);
+                return !get_slots().can_insert(maximum_len);
             }
 
             bool is_underflow() const noexcept {
-                const auto slots = get_slots();
+                const auto slots = this->get_slots();
                 return slots.stored_size() < slots.available();
-            }
-
-            std::size_t key_position(key_like_type k) const {
-                auto pv = get_page();
-                auto slots = pv.get_slots_dir();
-                auto slots_view = slots.view();
-
-                const auto key_proj = make_inode_key_projector(pv);
-                const auto key_cmp = make_key_less();
-
-                auto it = std::ranges::upper_bound(slots_view, k.key, key_cmp, key_proj);
-                return std::distance(slots_view.begin(), it);
             }
 
             bool keys_eq(key_like_type a, key_like_type b) const noexcept {
@@ -118,13 +138,23 @@ namespace fulla::bpt::paged {
                 return std::is_eq(key_cmp.compare(a.key, b.key));
             }
 
+            node_id_type self() const noexcept {
+                return id_;
+            }
+
+            bool can_update_key(std::size_t pos, key_like_type k) const {
+                const auto slots = this->get_slots();
+                const auto old_slot_value = slots.get_slot(pos);
+                const auto old_key_value = extract_key(old_slot_value);
+                const auto old_size_without_key = old_slot_value.size() - old_key_value.size();
+                return slots.can_update(pos, old_size_without_key + k.key.size());
+            }
+
             key_out_type get_key(std::size_t pos) const {
                 auto pv = get_page();
                 auto slots = pv.get_slots_dir();
-                const auto key_proj = inode_key_extractor{};
-
                 if (pos < slots.size()) {
-                    return { key_proj(slots.get_slot(pos)) };
+                    return { extract_key(slots.get_slot(pos)) };
                 }
                 return {};
             }
@@ -132,107 +162,26 @@ namespace fulla::bpt::paged {
             key_borrow_type borrow_key(std::size_t pos) const {
                 auto pv = get_page();
                 auto slots = get_slots();
-                const auto key_proj = make_inode_key_projector(pv);
 
                 if (pos < slots.size()) {
-                    auto key_result = key_proj(slots.get_slot(pos));
-                    key_borrow_type result{ .key = byte_buffer {key_result.begin(), key_result.end()}};
+                    auto key_result = extract_key(slots.get_slot(pos));
+                    key_borrow_type result{ .key = byte_buffer {key_result.begin(), key_result.end()} };
                     return result;
                 }
                 return {};
             }
 
             bool erase(std::size_t pos) const {
-                auto slots = get_slots();
+                auto slots = this->get_slots();
                 return slots.erase(pos);
             }
 
-            bool update_key(std::size_t pos, key_like_type k) const {
-                auto slots = get_slots();
-                if (slots.can_update(pos, k.key.size() + sizeof(page::bpt_inode_slot))) {
-                    byte_buffer new_value(sizeof(page::bpt_inode_slot) + k.key.size());
-                    if (new_value.size() > maximum_slot_size) {
-                        return false;
-                    }
-                    auto old_slot = slots.get_slot(pos);
-                    auto* slot_hdr = reinterpret_cast<page::bpt_inode_slot*>(new_value.data());
-                    auto* old_slot_hdr = reinterpret_cast<const page::bpt_inode_slot*>(old_slot.data());
-                    slot_hdr->child = old_slot_hdr->child;
-                    std::memcpy(new_value.data() + slot_hdr->key_offset(), old_slot.data() + old_slot_hdr->key_offset(), k.key.size());
-                    slots.update(pos, { new_value });
-                    return true;
-                }
-                return false; // ?
-            }
-
             bool is_valid() const {
-                return id_ != invalid_node_type;
+                return id_ != invalid_node_value;
             }
 
-            void set_parent(node_id_type new_value) {
-                page_view_type pv = get_page();
-                auto* inode_hdr = pv.subheader<page::bpt_inode_header>();
-                inode_hdr->parent = new_value;
-            }
-
-            node_id_type get_parent() {
-                page_view_type pv = get_page();
-                auto* inode_hdr = pv.subheader<page::bpt_inode_header>();
-                return inode_hdr->parent;
-            }
-
-            node_id_type get_child(std::size_t pos) const {
-                auto slots = get_slots();
-                if (pos < slots.size()) {
-                    auto slot_data = slots.get_slot(pos);
-                    auto slot_hdr = reinterpret_cast<const page::bpt_inode_slot*>(slot_data.data());
-                    return slot_hdr->child;
-                }
-                else if(pos == slots.size()) {
-                    auto pv = get_page();
-                    auto sub_hdr = pv.subheader<page::bpt_inode_header>();
-                    return sub_hdr->rightmost_child;
-                }
-                return invalid_node_type;
-            }
-
-            bool can_insert_child(std::size_t, key_like_type k, node_id_type) const {
-                const auto slots = get_slots();
-                const auto full_slot_size = (k.key.size() + sizeof(page::bpt_inode_slot));
-                return (full_slot_size < maximum_slot_size) && slots.can_insert(full_slot_size);
-            }
-
-            bool can_update_child(std::size_t, node_id_type) const noexcept {
-                return true;
-            }
-
-            bool insert_child(std::size_t pos, key_like_type k, node_id_type c) const {
-                auto slots = get_slots();
-                byte_buffer new_value(k.key.size() + sizeof(page::bpt_inode_slot));
-                if (new_value.size() > maximum_slot_size) {
-                    return false;
-                }
-                auto slot_hdr = reinterpret_cast<page::bpt_inode_slot*>(new_value.data());
-                slot_hdr->child = c;
-                std::memcpy(new_value.data() + slot_hdr->key_offset(), k.key.data(), k.key.size());
-                return slots.insert(pos, { new_value });
-            }
-
-            bool update_child(std::size_t pos, node_id_type c) const {
-                auto slots = get_slots();
-                if (pos < slots.size()) {
-                    auto value = slots.get_slot(pos);
-                    auto slot_hdr = reinterpret_cast<page::bpt_inode_slot*>(value.data());
-                    slot_hdr->child = c;
-                    return true;
-                }
-                else if(pos == slots.size()) {
-                    auto pv = get_page();
-                    auto sub_hdr = pv.subheader<page::bpt_inode_header>();
-                    sub_hdr->rightmost_child = c;
-                    return true;
-                }
-                return false;
+            std::size_t size() const {
+                return get_slots().size();
             }
 
             slot_directory_type get_slots() const noexcept {
@@ -243,40 +192,372 @@ namespace fulla::bpt::paged {
                 return page_;
             }
 
+            virtual byte_view extract_key(byte_view val) const = 0;
+
             page_view_type page_;
-            node_id_type id_{};
+            node_id_type id_ = invalid_node_value;
+            std::size_t minimum_len = 0;
+            std::size_t maximum_len = 0;
+            typename buffer_manager_type::page_handle hdl_;
+        };
+
+        struct leaf_type : public node_base {
+            leaf_type(page_view_type page, node_id_type self_id, typename buffer_manager_type::page_handle hdl)
+                : node_base(page, self_id, minumum_leaf_slot_size, maximum_leaf_slot_size, std::move(hdl))
+            {}
+
+            leaf_type() = default;
+
+            virtual byte_view extract_key(byte_view val) const {
+                const auto key_proj = leaf_key_extractor{};
+                return key_proj(val);
+            }
+
+            std::size_t key_position(key_like_type k) const {
+                auto pv = this->get_page();
+                auto slots = pv.get_slots_dir();
+                auto slots_view = slots.view();
+
+                const auto key_proj = make_value_key_projector(pv);
+                const auto key_cmp = make_key_less();
+
+                auto it = std::ranges::upper_bound(slots_view, k.key, key_cmp, key_proj);
+                return std::distance(slots_view.begin(), it);
+            }
+
+            bool update_key(std::size_t pos, key_like_type k) const {
+                auto slots = this->get_slots();
+                leaf_value_extractor lve;
+                auto old_slot = slots.get_slot(pos);
+                auto old_value = lve(old_slot);
+                auto new_full_len = sizeof(page::bpt_leaf_slot) + k.key.size() + old_value.size();
+
+                if (slots.can_update(pos, new_full_len)) {
+                    if (new_full_len > maximum_leaf_slot_size) {
+                        return false;
+                    }
+                    byte_buffer new_value(new_full_len);
+                    auto* slot_hdr = reinterpret_cast<page::bpt_leaf_slot*>(new_value.data());
+                    
+                    slot_hdr->update(k.key.size());
+                    std::memcpy(new_value.data() + slot_hdr->key_offset(), k.key.data(), k.key.size());
+                    std::memcpy(new_value.data() + slot_hdr->value_offset(), old_value.data(), old_value.size());
+
+                    slots.update(pos, {new_value});
+
+                    return true;
+                }
+                return false; // ?
+            }
+
+            bool insert_value(std::size_t pos, key_like_type k, value_in_type v) const {
+                auto slots = this->get_slots();
+                auto new_full_len = sizeof(page::bpt_leaf_slot) + k.key.size() + v.val.size();
+                if (new_full_len > maximum_leaf_slot_size) {
+                    return false;
+                }
+
+                if (slots.reserve(pos, new_full_len)) {
+                    auto data = slots.get_slot(pos);
+                    auto hdr = reinterpret_cast<page::bpt_leaf_slot*>(data.data());
+                    hdr->update(k.key.size());
+                    std::memcpy(data.data() + hdr->key_offset(), k.key.data(), k.key.size());
+                    std::memcpy(data.data() + hdr->value_offset(), v.val.data(), v.val.size());
+                    return true;
+                }
+                return false;
+            }
+
+            bool update_value(std::size_t pos, value_in_type v) {
+                auto slots = this->get_slots();
+                const auto old_data = slots.get_slot(pos);
+                const auto old_value = leaf_value_extractor{}(old_data);
+                const auto old_key = leaf_key_extractor{}(old_data);
+                const auto new_size = sizeof(page::bpt_leaf_slot) + old_key.size() + v.val.size();
+                if (new_size > maximum_leaf_slot_size) {
+                    return false;
+                }
+                if (slots.can_update(pos, new_size)) {
+                    byte_buffer new_data(new_size);
+                    auto new_hdr = reinterpret_cast<page::bpt_leaf_slot*>(new_data.data());
+                    new_hdr->update(old_key.size());
+                    std::memcpy(new_data.data() + new_hdr->key_offset(), old_key.data(), old_key.size());
+                    std::memcpy(new_data.data() + new_hdr->value_offset(), v.val.data(), v.val.size());
+                    return slots.update(pos, { new_data });
+                }
+                return false;
+            }
+
+            bool can_insert_value(std::size_t, key_like_type k, value_in_type v) {
+                const auto slots = this->get_slots();
+                const auto new_full_len = sizeof(page::bpt_leaf_slot) + k.key.size() + v.val.size();
+                if (new_full_len <= maximum_leaf_slot_size) {
+                    return slots.can_insert(new_full_len);
+                }
+                return false;
+            }
+
+            bool can_update_value(std::size_t pos, value_in_type v) {
+                const auto slots = this->get_slots();
+                const auto old_value = slots.get_slot(pos);
+                auto k = leaf_key_extractor{}(old_value);
+                const auto new_full_len = sizeof(page::bpt_leaf_slot) + k.size() + v.val.size();
+                if (new_full_len <= maximum_leaf_slot_size) {
+                    return slots.can_update(pos, new_full_len);
+                }
+                return false;
+            }
+
+            value_out_type get_value(std::size_t pos) {
+                auto slots = this->get_slots();
+                if (pos < slots.size()) {
+                    leaf_value_extractor lve;
+                    return { lve(slots.get_slot(pos)) };
+                }
+                return {};
+            }
+
+            value_borrow_type borrow_value(std::size_t pos) {
+                auto slots = this->get_slots();
+                if (pos < slots.size()) {
+                    leaf_value_extractor lve;
+                    value_borrow_type res;
+                    const auto value = lve(slots.get_slot(pos));
+                    res.val.insert(res.val.end(), value.begin(), value.end());
+                    return res;
+                }
+                return {};
+            }
+
+            void set_next(node_id_type nv) {
+                auto pv = this->get_page();
+                auto hdr = pv.subheader<page::bpt_leaf_header>();
+                hdr->next = nv;
+            }
+            
+            node_id_type get_next() const {
+                auto pv = this->get_page();
+                auto hdr = pv.subheader<const page::bpt_leaf_header>();
+                return hdr->next;
+            }
+
+            void set_prev(node_id_type nv) {
+                auto pv = this->get_page();
+                auto hdr = pv.subheader<page::bpt_leaf_header>();
+                hdr->prev = nv;
+            }
+
+            node_id_type get_prev() const {
+                auto pv = this->get_page();
+                auto hdr = pv.subheader<const page::bpt_leaf_header>();
+                return hdr->prev;
+            }
+
+            void set_parent(node_id_type new_value) {
+                page_view_type pv = this->get_page();
+                auto* inode_hdr = pv.subheader<page::bpt_leaf_header>();
+                inode_hdr->parent = new_value;
+            }
+
+            node_id_type get_parent() {
+                page_view_type pv = this->get_page();
+                auto* inode_hdr = pv.subheader<page::bpt_leaf_header>();
+                return inode_hdr->parent;
+            }
+
+        };
+
+        struct inode_type: public node_base {
+            using node_id_type = node_id_type;
+
+            inode_type(page_view_type page, node_id_type self_id, typename buffer_manager_type::page_handle hdl)
+                : node_base(page, self_id, minumum_inode_slot_size, maximum_inode_slot_size, std::move(hdl)) 
+            {}
+
+            inode_type() = default;
+
+            virtual byte_view extract_key(byte_view val) const {
+                const auto key_proj = inode_key_extractor{};
+                return key_proj(val);
+            }
+
+            std::size_t key_position(key_like_type k) const {
+                auto pv = this->get_page();
+                auto slots = pv.get_slots_dir();
+                auto slots_view = slots.view();
+
+                const auto key_proj = make_inode_key_projector(pv);
+                const auto key_cmp = make_key_less();
+
+                auto it = std::ranges::upper_bound(slots_view, k.key, key_cmp, key_proj);
+                return std::distance(slots_view.begin(), it);
+            }
+
+            bool update_key(std::size_t pos, key_like_type k) const {
+                auto slots = this->get_slots();
+                const auto old_data = slots.get_slot(pos);
+                const auto* old_slot_hdr = reinterpret_cast<const page::bpt_inode_slot*>(old_data.data());
+                const auto old_child_value = old_slot_hdr->child;
+                const auto new_len = sizeof(page::bpt_inode_slot) + k.key.size();
+                if (new_len > maximum_inode_slot_size) {
+                    return false;
+                }
+                if (slots.update_reserve(pos, new_len)) {
+                    auto new_value = slots.get_slot(pos);
+                    auto* slot_hdr = reinterpret_cast<page::bpt_inode_slot*>(new_value.data());
+                    slot_hdr->child = old_child_value;
+                    std::memcpy(new_value.data() + slot_hdr->key_offset(), k.key.data(), k.key.size());
+                    return true;
+                }
+                return false; // ?
+            }
+
+            void set_parent(node_id_type new_value) {
+                page_view_type pv = this->get_page();
+                auto* inode_hdr = pv.subheader<page::bpt_inode_header>();
+                inode_hdr->parent = new_value;
+            }
+
+            node_id_type get_parent() {
+                page_view_type pv = this->get_page();
+                auto* inode_hdr = pv.subheader<page::bpt_inode_header>();
+                return inode_hdr->parent;
+            }
+
+            node_id_type get_child(std::size_t pos) const {
+                if (auto c_ptr = get_child_ptr(pos)) {
+                    return static_cast<node_id_type>(*c_ptr);
+                }
+                return invalid_node_value;
+            }
+
+            bool can_insert_child(std::size_t, key_like_type k, node_id_type) const {
+                const auto slots = this->get_slots();
+                const auto full_slot_size = (k.key.size() + sizeof(page::bpt_inode_slot));
+                return (full_slot_size < minumum_inode_slot_size) && slots.can_insert(full_slot_size);
+            }
+
+            bool can_update_child(std::size_t, node_id_type) const noexcept {
+                return true;
+            }
+
+            bool insert_child(std::size_t pos, key_like_type k, node_id_type c) const {
+                auto slots = this->get_slots();
+                const auto full_len = k.key.size() + sizeof(page::bpt_inode_slot);
+                if (full_len > maximum_inode_slot_size) {
+                    return false;
+                }
+                if (slots.reserve(pos, full_len)) {
+                    auto new_slot = slots.get_slot(pos);
+                    auto slot_hdr = reinterpret_cast<page::bpt_inode_slot*>(new_slot.data());
+                    slot_hdr->child = c;
+                    std::memcpy(new_slot.data() + slot_hdr->key_offset(), k.key.data(), k.key.size());
+                    return true;
+                }
+                return false;
+            }
+
+            bool update_child(std::size_t pos, node_id_type c) const {
+                if (auto c_ptr = get_child_ptr(pos)) {
+                    *c_ptr = c;
+                    return true;
+                }
+                return false;
+            }
+
+        private:
+            auto get_child_ptr(std::size_t pos) const -> decltype(page::bpt_inode_slot::child) * {
+                auto slots = this->get_slots();
+                if (pos < slots.size()) {
+                    auto value = slots.get_slot(pos);
+                    auto slot_hdr = reinterpret_cast<page::bpt_inode_slot*>(value.data());
+                    return &slot_hdr->child;
+                }
+                else if(pos == slots.size()) {
+                    auto pv = this->get_page();
+                    auto sub_hdr = pv.subheader<page::bpt_inode_header>();
+                    return &sub_hdr->rightmost_child;
+                }
+                return nullptr;
+            }
         };
 
         static_assert(concepts::INode<inode_type, key_out_type, key_like_type, key_borrow_type>);
+        static_assert(concepts::LeafNode<leaf_type, key_out_type, key_like_type, key_borrow_type, 
+                value_out_type, value_in_type, value_borrow_type>);
 
         model(buffer_manager_type& mgr)
-            : allocator_(mgr) 
+            : accessor_(mgr)
         {}
 
-        struct allocator_type {
+        struct accessor_type {
 
-            allocator_type(buffer_manager_type& mgr)
+            accessor_type(buffer_manager_type& mgr)
                 : mgr_(mgr) 
             {}
 
             leaf_type create_leaf() {
-                return {};
+                auto new_page = mgr_.create();
+                auto pv = page_view_type{ new_page.rw_span() };
+                const auto page_id = new_page.id();
+                pv.header().init(page::page_kind::bpt_leaf, mgr_.page_size(), page_id, sizeof(page::bpt_leaf_header));
+                pv.get_slots_dir().init();
+                auto subhdr = pv.subheader<page::bpt_leaf_header>();
+                subhdr->init();
+
+                return {pv, page_id, std::move(new_page) };
             }
             
             inode_type create_inode() {
-                return {};
+                auto new_page = mgr_.create();
+                auto pv = page_view_type{ new_page.rw_span() };
+                const auto page_id = new_page.id();
+                pv.header().init(page::page_kind::bpt_inode, mgr_.page_size(), page_id, sizeof(page::bpt_inode_header));
+                pv.get_slots_dir().init();
+                auto subhdr = pv.subheader<page::bpt_inode_header>();
+                subhdr->init();
+                return { pv, page_id, std::move(new_page) };
             }
 
-            void destroy(node_id_type id) {
-                // no-op
+            bool destroy(node_id_type id) {
+                return true;
             }
 
             leaf_type load_leaf(node_id_type id) {
+                auto new_page = mgr_.try_fetch(id);
+                if (new_page) {
+                    const auto page_id = new_page.id();
+                    auto data = new_page.rw_span();
+                    return leaf_type{ page_view_type { data }, page_id, std::move(new_page) };
+                }
                 return {};
             }
             
             inode_type load_inode(node_id_type id) {
+                auto new_page = mgr_.try_fetch(id);
+                if (new_page) {
+                    const auto page_id = new_page.id();
+                    auto data = new_page.rw_span();
+                    return inode_type{ page_view_type { data }, page_id, std::move(new_page) };
+                }
                 return {};
+            }
+
+            bool can_merge_leafs(const leaf_type& dst, const leaf_type& src) const {
+                return page::slots::can_merge(dst.get_page().get_slots_dir(), src.get_page().get_slots_dir());
+            }
+
+            bool can_merge_inodes(const inode_type& dst, const inode_type& src) {
+                const auto dst_slots = dst.get_page().get_slots_dir();
+                const auto src_slots = src.get_page().get_slots_dir();
+                const auto dst_available = dst_slots.available_after_compact();
+ 
+                const auto need_size = page::slots::merge_need_bytes(dst_slots, src_slots) + maximum_inode_slot_size;
+
+                if (dst_available < need_size) {
+                    return false;
+                }
+                return page::slots::can_merge(dst.get_page().get_slots_dir(), src.get_page().get_slots_dir());
             }
 
             std::tuple<node_id_type, bool> load_root() {
@@ -294,16 +575,18 @@ namespace fulla::bpt::paged {
             buffer_manager_type mgr_;
         };
 
-        allocator_type &get_allocator() {
-            return allocator_;
+        static_assert(concepts::NodeAccessor<accessor_type, node_id_type, inode_type, leaf_type>);
+
+        accessor_type &get_accessor() {
+            return accessor_;
         }
         
-        const allocator_type &get_allocator() const {
-            return allocator_;
+        const accessor_type &get_accessor() const {
+            return accessor_;
         }
 
     private:
-        allocator_type allocator_;
+        accessor_type accessor_;
     };
 
 }

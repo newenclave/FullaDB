@@ -30,6 +30,7 @@ namespace fulla::bpt::concepts {
 
         // Modification
         { n.erase(i) } -> std::convertible_to<bool>;
+        { n.can_update_key(i, k) } -> std::convertible_to<bool>;
         { n.update_key(i, k) } -> std::convertible_to<bool>;
 
         // Check

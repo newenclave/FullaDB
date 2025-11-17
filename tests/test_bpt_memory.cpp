@@ -269,3 +269,26 @@ TEST_CASE("memory B+Tree vs std::map: randomized insert/erase equivalence (deter
         }
     }
 }
+
+TEST_CASE("memory B+Tree split on update") {
+    using Model = MemModel<int, std::string, 5>;
+    using Tree = fulla::bpt::tree<Model>;
+    using key_like_type = typename Model::key_like_type;
+    using key_out_type = typename Model::key_out_type;
+    using value_in_type = typename Model::value_in_type;
+
+    Tree t;
+    for (int i = 0; i < 20; ++i) {
+        auto ts = "!" + std::to_string(i);
+        CHECK(t.insert(key_like_type{ i }, value_in_type{ ts }, insert::insert, rebalance::neighbor_share));
+    }
+
+    t.dump();
+
+    std::string val = "01234567891112";
+
+    t.update(key_like_type{ 12 }, value_in_type{ val }, rebalance::neighbor_share);
+
+    t.dump();
+
+}

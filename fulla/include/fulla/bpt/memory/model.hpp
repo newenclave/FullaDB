@@ -68,7 +68,7 @@ namespace fulla::bpt::memory {
                 return *v;
             }
             value_type& get() {
-                return &v;
+                return *v;
             }
         public:
             value_type* v = nullptr;
@@ -151,6 +151,10 @@ namespace fulla::bpt::memory {
             }
 
             virtual bool erase(std::size_t pos) = 0;
+
+            bool can_update_key(std::size_t, key_like_type) const noexcept {
+                return true;
+            }
 
             bool keys_eq(const key_like_type& lhs, const key_like_type& rhs) const noexcept {
                 return cmp{}.eq(lhs.get(), rhs.get());
@@ -297,8 +301,9 @@ namespace fulla::bpt::memory {
                 return !this->is_full();
             }
 
-            bool can_update_value(std::size_t, value_in_type) const noexcept {
-                return true;
+            bool can_update_value(std::size_t, value_in_type val) const noexcept {
+                // TODO: fixit
+                return val.get().size() < 10;
             }
 
             bool insert_value(std::size_t pos, const key_like_type &key, value_in_type val) {
