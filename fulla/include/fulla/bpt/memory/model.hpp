@@ -462,6 +462,10 @@ namespace fulla::bpt::memory {
             return id.id != node_id_type::npos;
         }
 
+        constexpr static node_id_type get_invalid_node_id() {
+            return { };
+        }
+
         bool is_leaf_id(const node_id_type& id) const {
             return get_accessor().is_leaf_id(id);
         }

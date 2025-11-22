@@ -10,6 +10,14 @@
 #include <concepts>
 
 namespace fulla::bpt::concepts {
+
+    template<typename T, typename NodeId, typename KeyOutT, typename ValueOutT>
+    concept Stringifier = requires (const T & obj, NodeId id, const KeyOutT & kout, const ValueOutT & vout) {
+        { obj.id_as_string(id) } -> std::convertible_to<std::string>;
+        { obj.key_as_string(kout) } -> std::convertible_to<std::string>;
+        { obj.value_as_string(vout) } -> std::convertible_to<std::string>;
+    };
+
     template <typename NodeT, typename KeyOutT, typename KeyLikeT, typename KeyBorrowT>
     concept NodeKeys = requires (NodeT n, std::size_t i, const KeyLikeT &k) {
         typename NodeT::node_id_type;
@@ -99,7 +107,7 @@ namespace fulla::bpt::concepts {
     template<typename ModelT>
     concept BptModel = requires (ModelT m) {
 
-        typename ModelT::key_type;
+        //typename ModelT::key_type;
         typename ModelT::key_like_type;
         typename ModelT::key_out_type;
         typename ModelT::key_borrow_type;
@@ -122,6 +130,7 @@ namespace fulla::bpt::concepts {
         { m.is_valid_id(typename ModelT::node_id_type{}) } -> std::convertible_to<bool>;
         { m.is_leaf_id(typename ModelT::node_id_type{}) } -> std::convertible_to<bool>;
         { m.get_accessor() } -> std::convertible_to<typename ModelT::accessor_type &>;
+        { m.get_invalid_node_id() } -> std::convertible_to<typename ModelT::node_id_type>;
 
         requires requires(typename ModelT::key_out_type kout, typename ModelT::value_out_type vout, 
                            typename ModelT::key_borrow_type kbor, typename ModelT::value_borrow_type vbor) {

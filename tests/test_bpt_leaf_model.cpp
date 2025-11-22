@@ -1,3 +1,7 @@
+#include <map>
+#include <ranges>
+#include <algorithm>
+
 #include "tests.hpp"
 
 #include "fulla/bpt/paged/model.hpp"
@@ -7,6 +11,9 @@
 #include "fulla/page/bpt_leaf.hpp"
 
 namespace {
+
+	using namespace fulla;
+
 	using fulla::core::byte_buffer;
 	using fulla::core::byte_view;
 	using fulla::core::byte_span;
@@ -54,6 +61,40 @@ namespace {
 	value_in_type as_value_in(const std::string& val) {
 		return { .val = byte_view{ reinterpret_cast<const byte*>(val.data()), val.size()}};
 	}
+
+	static std::string get_random_string(std::size_t max_len, std::size_t min_len = 10) {
+		static std::random_device rd;
+		static std::mt19937 gen(rd());
+
+		const std::string chars =
+			"0123456789"
+			"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+			"abcdefghijklmnopqrstuvwxyz";
+
+		std::uniform_int_distribution<std::size_t> len_dist(min_len, max_len);
+		std::uniform_int_distribution<std::size_t> char_dist(0, chars.size() - 1);
+
+		std::size_t len = len_dist(gen);
+		std::string res;
+		res.reserve(len);
+
+		for (std::size_t i = 0; i < len; ++i) {
+			res.push_back(chars[char_dist(gen)]);
+		}
+
+		return res;
+	}
+	struct leaf_key_extractor {
+		byte_view operator ()(byte_view value) const noexcept {
+			const auto* slot_hdr = reinterpret_cast<const page::bpt_leaf_slot*>(value.data());
+			return { value.begin() + slot_hdr->key_offset(), slot_hdr->key_len };
+		}
+	};
+
+	auto compare(core::byte_view a, core::byte_view b) {
+		return std::lexicographical_compare_three_way(a.begin(), a.end(), b.begin(), b.end());
+	}
+
 }
 
 TEST_SUITE("bpt/page/model/inode") {
@@ -141,5 +182,89 @@ TEST_SUITE("bpt/page/model/inode") {
 			leaf.set_parent(new_value);
 			CHECK_EQ(new_value, leaf.get_parent());
 		}
+	}
+
+	TEST_CASE("bpt::leaf insert / remove random value") {
+		auto page = make_leaf_page(4096);
+		auto pv = page_view_type{ page };
+		auto slots = pv.get_slots_dir();
+		std::map<std::string, std::string> tests;
+		model_type::leaf_type leaf(pv, 100, {});
+
+		static std::random_device rd;
+		static std::mt19937 gen(rd());
+
+		const auto check_slots = [&]() {
+			for (auto& t : tests) {
+				auto key = prop::make_record(prop::str{ t.first });
+				auto pos = leaf.key_position(key_like_type{ key.view() });
+				auto gk = leaf.get_key(pos);
+				CHECK(std::is_eq(compare(gk.key, key.view())));
+			}
+			};
+
+		while (1) {
+			auto ts = get_random_string(20, 5);
+			if (!tests.contains(ts)) {
+				auto key = prop::make_record(prop::str{ ts });
+				auto pos = leaf.key_position(key_like_type{ key.view() });
+				if (leaf.can_insert_value(pos, key_like_type{ key.view() }, as_value_in(ts))) {
+					REQUIRE(leaf.insert_value(pos, key_like_type{ key.view() }, as_value_in(ts)));
+					auto gk = leaf.get_key(pos);
+					CHECK(std::is_eq(compare(gk.key, key.view())));
+					tests[ts] = ts;
+				}
+				else {
+					break;
+				}
+				check_slots();
+			}
+		}
+
+		auto size = tests.size();
+		auto lsize = leaf.size();
+
+		for (auto& t : tests) {
+			auto ts = get_random_string(20, 5);
+			auto key = prop::make_record(prop::str{ t.first });
+			auto pos = leaf.key_position(key_like_type{ key.view() });
+			if (leaf.can_update_value(pos, as_value_in(ts))) {
+				REQUIRE(leaf.update_value(pos, as_value_in(ts)));
+				t.second = ts;
+				check_slots();
+			}
+		}
+
+		check_slots();
+		for (std::size_t i = 0; i < size / 2; ++i) {
+			std::uniform_int_distribution<std::size_t> dist(0, tests.size() - 1);
+
+			auto pos_itr = tests.begin();
+			std::advance(pos_itr, dist(gen));
+
+			auto key = prop::make_record(prop::str{ pos_itr->first });
+			auto pos = leaf.key_position(key_like_type{ key.view() });
+			auto gk = leaf.get_key(pos);
+
+			CHECK(std::is_eq(compare(gk.key, key.view())));
+			CHECK(leaf.erase(pos));
+			tests.erase(pos_itr);
+			slots.compact();
+			check_slots();
+		}
+
+		for (auto& t : tests) {
+			auto ts = get_random_string(20, 5);
+			auto key = prop::make_record(prop::str{ t.first });
+			auto pos = leaf.key_position(key_like_type{ key.view() });
+			if (leaf.can_update_value(pos, as_value_in(ts))) {
+				REQUIRE(leaf.update_value(pos, as_value_in(ts)));
+				t.second = ts;
+				check_slots();
+			}
+		}
+
+		size = tests.size();
+		lsize = leaf.size();
 	}
 }

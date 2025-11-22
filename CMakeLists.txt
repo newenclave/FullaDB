@@ -48,6 +48,7 @@ if (FULLADB_BUILD_TESTS)
         tests/test_bpt_inode_model.cpp
         tests/test_bpt_leaf_model.cpp
         tests/test_bpt_page_allocator.cpp
+        tests/test_bpt_page_model.cpp
     )
     
     target_link_libraries(tests PRIVATE fulladb)    

@@ -11,6 +11,7 @@
 #include <optional>
 #include <format>
 #include <sstream>
+#include <cassert>
 
 #include "fulla/bpt/concepts.hpp"
 #include "fulla/bpt/policies.hpp"
@@ -160,6 +161,7 @@ namespace fulla::bpt {
             const value_type& deref() const {
                 if (!cache_) {
                     auto leaf = tree_->model_.get_accessor().load_leaf(leaf_);
+                    assert(leaf.is_valid() && "Something went wrong. leaf is not valid");
                     cache_.emplace(leaf.get_key(idx_), leaf.get_value(idx_));
                 }
                 return *cache_;
@@ -169,13 +171,17 @@ namespace fulla::bpt {
                 cache_.reset();
             }
 
+            bool is_end(node_id_type pos) const {
+                return !tree_->model_.is_valid_id(pos);
+            }
+
             bool is_end() const {
                 return !tree_->model_.is_valid_id(leaf_);
             }
 
             tree* tree_{};
-            node_id_type leaf_{};
-            std::size_t idx_{ 0 };
+            node_id_type leaf_ {};
+            std::size_t idx_{ (std::size_t)(-1)};
             mutable std::optional<value_type> cache_;
         };
 
@@ -197,11 +203,11 @@ namespace fulla::bpt {
         }
 
         iterator end() {
-            return iterator(this, {}, 0);
+            return iterator(this, model_.get_invalid_node_id(), 0);
         }
 
         bool insert(const key_like_type& key, value_in_type value, 
-            policies::insert ip, 
+            policies::insert ip = policies::insert::insert,
             policies::rebalance rp = policies::rebalance::force_split) {
             auto& accessor = get_accessor();
             auto [root, exists] = accessor.load_root();
@@ -282,11 +288,12 @@ namespace fulla::bpt {
             auto [nodeid, pos, found] = find_node_with(key);
             if (found) {
                 auto node = accessor.load_leaf(nodeid);
-                return remove_impl(key, node, pos);
+                return remove_impl(node, pos);
             }
             return false;
         }
 
+#if 0 // invalid implementation. TODO: think how to fix 
         iterator erase(iterator where) {
             if (where == end()) {
                 return where;
@@ -305,6 +312,15 @@ namespace fulla::bpt {
                 return end();
             }
         }
+
+#else   // good but not as good as it could be.
+        void erase(iterator where) {
+            if (where != end()) {
+                auto node = model_.get_accessor().load_leaf(where.leaf_);
+                remove_impl(node, where.idx_);
+            }
+        }
+#endif 
 
         iterator find(key_like_type key) {
             auto [nodeid, pos, found] = find_node_with(key);
@@ -326,68 +342,72 @@ namespace fulla::bpt {
             }
         }
 
-        void dump_node(node_id_type node, int level) const {
-            for (int i = 0; i < level; ++i) {
-                std::cout << "  ";
-            }
+        void dump_node([[maybe_unused]] node_id_type node, [[maybe_unused]] int level) {
+            
+            if constexpr (concepts::Stringifier<model_type, node_id_type, key_out_type, value_out_type>) {
+                for (int i = 0; i < level; ++i) {
+                    std::cout << "  ";
+                }
 
-            const auto& accessor = get_accessor();
+                auto& accessor = get_accessor();
 
-            std::ostringstream leaf_info;
-            const bool is_leaf = model_.is_leaf_id(node);
-            if (is_leaf) {
-                leaf_info << "* "
-                    ;
-            }
+                std::ostringstream leaf_info;
+                const bool is_leaf = model_.is_leaf_id(node);
+                if (is_leaf) {
+                    leaf_info << "* "
+                        ;
+                }
 
-            auto leaf = accessor.load_leaf(node);
-            auto inode = accessor.load_inode(node);
+                auto leaf = accessor.load_leaf(node);
+                auto inode = accessor.load_inode(node);
 
-            //std::cout << std::format("<{} p:{}>", leaf ? leaf.self() : inode.self(), leaf ? leaf.get_parent() : inode.get_parent());
-            if (leaf.is_valid()) {
-                std::cout << std::format("<{} p:{} cap:{}>", leaf.self().id, leaf.get_parent().id, leaf.capacity());
-            }
-            else {
-                std::cout << std::format("<{} p:{} cap:{}>", inode.self().id, inode.get_parent().id, inode.capacity());
-            }
-            std::cout
-                << std::dec << " "
-                << leaf_info.str()
-                << std::dec << " [";
+                if (leaf.is_valid()) {
+                    std::cout << std::format("<{} p:{} cap:{}>", model_.id_as_string(leaf.self()), model_.id_as_string(leaf.get_parent()), leaf.capacity());
+                }
+                else {
+                    std::cout << std::format("<{} p:{} cap:{}>", model_.id_as_string(inode.self()), model_.id_as_string(inode.get_parent()), inode.capacity());
+                }
+                std::cout
+                    << std::dec << " "
+                    << leaf_info.str()
+                    << std::dec << " [";
 
-            const auto access = [&](auto value) {
-                for (size_t i = 0; i < value.size(); ++i) {
-                    if (i > 0) {
-                        std::cout << ", ";
+                const auto access = [&](auto value) {
+                    auto value_s = value.size();
+                    for (size_t i = 0; i < value_s; ++i) {
+                        if (i > 0) {
+                            std::cout << ", ";
+                        }
+                        std::cout << model_.key_as_string(value.get_key(i));
+                        if constexpr (std::is_same_v<decltype(value), decltype(leaf)>) {
+                            std::cout << ": '" << model_.value_as_string(value.get_value(i)) << "'";
+                        }
                     }
-                    std::cout << value.get_key(i).get();
-                    if constexpr (std::is_same_v<decltype(value), decltype(leaf)>) {
-                        std::cout << ": '" << value.get_value(i).get() << "'";
+                };
+
+                if (leaf.is_valid()) {
+                    access(leaf);
+                }
+                else if (inode.is_valid()) {
+                    access(inode);
+                }
+
+                std::cout << "]";
+
+
+                if (!is_leaf) {
+                    std::cout << " children: " << inode.size() + 1;
+                }
+
+                std::cout << "\n";
+
+                if (!is_leaf) {
+                    for (std::size_t id = 0; id < inode.size() + 1; ++id) {
+                        dump_node(inode.get_child(id), level + 1);
                     }
                 }
-            };
-
-            if (leaf.is_valid()) {
-                access(leaf);
-            }
-            else if (inode.is_valid()) {
-                access(inode);
             }
 
-            std::cout << "]";
-
-
-            if (!is_leaf) {
-                std::cout << " children: " << inode.size() + 1;
-            }
-
-            std::cout << "\n";
-
-            if (!is_leaf) {
-                for (std::size_t id = 0; id < inode.size() + 1; ++id) {
-                    dump_node(inode.get_child(id), level + 1);
-                }
-            }
         }
 
         model_type& get_model() {
@@ -400,13 +420,15 @@ namespace fulla::bpt {
 
         //private:
 
-        bool remove_impl(const key_like_type& key, leaf_type &node, std::size_t pos) {
+        // TODO. Do we need key here? 
+        bool remove_impl(leaf_type &node, std::size_t pos) {
             auto& accessor = get_accessor();
+            auto stored_key = node.borrow_key(pos);
             node.erase(pos);
             if (pos == 0 && (node.size() > 0)) {
                 fix_parent_index(node);
             }
-            handle_leaf_underflow(node, key);
+            handle_leaf_underflow(node, model_.key_borrow_as_like(stored_key));
             auto [root, _] = accessor.load_root();
             const auto root_size = visit_node([](auto& r) { return r.size(); }, root);
             if (root_size == 0) {
@@ -433,7 +455,7 @@ namespace fulla::bpt {
         };
 
         split_inode_result split_inode(inode_type& node) {
-            const auto maximum = node.capacity();
+            const auto maximum = node.size();
             const auto middle_element = maximum / 2;
             const auto reduce_size = (maximum - middle_element);
 
@@ -468,7 +490,7 @@ namespace fulla::bpt {
         }
 
         split_leaf_result split_leaf(leaf_type& node) {
-            const auto maximum = node.capacity();
+            const auto maximum = node.size();
             const auto middle_element = maximum / 2;
             const auto reduce_size = (maximum - middle_element);
 
@@ -864,6 +886,8 @@ namespace fulla::bpt {
                 auto parent = get_accessor().load_inode(node.get_parent());
                 const auto pos = find_child_index_in_parent(parent, node.self());
 
+                assert(pos != npos && "Something went wrong. pos == npos");
+
                 auto borrow_parent_key = parent.borrow_key(pos);
                 auto borrow_key = right.borrow_key(0);
 
@@ -1046,7 +1070,6 @@ namespace fulla::bpt {
             auto right = accessor.load_leaf(find_right_sibling(node));
             if (right.is_valid()) {
                 if (get_accessor().can_merge_leafs(node, right)) {
-//                if ((right.size() + node.size()) <= node.capacity()) {
 
                     auto parent = accessor.load_inode(node.get_parent());
                     const auto right_pos = find_child_index_in_parent(parent, right.self());
@@ -1157,7 +1180,7 @@ namespace fulla::bpt {
         //endregion merging
 #pragma endregion "merging"
 
-        node_id_type get_leftmost_leaf(node_id_type id) const {
+        node_id_type get_leftmost_leaf(node_id_type id) {
 
             if (model_.is_leaf_id(id)) {
                 return id;
@@ -1165,6 +1188,9 @@ namespace fulla::bpt {
             else {
                 auto& accessor = get_accessor();
                 auto next = accessor.load_inode(id);
+
+                assert(next.is_valid() && "Something went wrong. next is not valid");
+
                 auto id0 = next.get_child(0);
                 while (!model_.is_leaf_id(id0)) {
                     next = accessor.load_inode(id0);
@@ -1174,7 +1200,7 @@ namespace fulla::bpt {
             }
         }
 
-        node_id_type get_rightmost_leaf(node_id_type id) const {
+        node_id_type get_rightmost_leaf(node_id_type id) {
 
             if (model_.is_leaf_id(id)) {
                 return id;
@@ -1215,7 +1241,7 @@ namespace fulla::bpt {
                     return parent.get_child(pos - 1);
                 }
             }
-            return node_id_type{};
+            return model_.get_invalid_node_id();
         }
 
         template <typename NodeT>
@@ -1227,7 +1253,7 @@ namespace fulla::bpt {
                     return parent.get_child(pos + 1);
                 }
             }
-            return node_id_type{};
+            return model_.get_invalid_node_id();
         }
 
         template <typename NodeT>
@@ -1278,7 +1304,8 @@ namespace fulla::bpt {
                 auto leaf = accessor.load_leaf(current_id);
                 if (leaf.is_valid()) {
                     const auto pos = leaf.key_position(key);
-                    const bool found = (pos != leaf.size()) && leaf.keys_eq(model_.key_out_as_like(leaf.get_key(pos)), key);
+                    const auto leaf_size = leaf.size();
+                    const bool found = (pos != leaf_size) && leaf.keys_eq(model_.key_out_as_like(leaf.get_key(pos)), key);
                     return { current_id, pos, found };
                 }
                 else {

@@ -25,6 +25,7 @@ namespace fulla::storage {
         const fulla::core::byte* src,
         std::size_t n
     ) {
+        typename D::offset_type;
         { dev.block_size() } -> std::convertible_to<std::size_t>;
         { dev.is_open() }    -> std::convertible_to<bool>;
 

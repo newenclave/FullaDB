@@ -14,395 +14,450 @@
 #include <span>
 #include <algorithm>
 #include <cstring>
+#include <atomic>
 
 #include "fulla/core/bytes.hpp"
 #include "fulla/storage/device.hpp" // RandomAccessDevice, position_type
 #include "fulla/storage/stats.hpp"  // stats / null_stats
 
 #ifndef DB_ASSERT
-  #include <cassert>
-  #define DB_ASSERT(cond, msg) do { (void)(msg); assert(cond); } while(0)
+#include <cassert>
+#define DB_ASSERT(cond, msg) do { (void)(msg); assert(cond); } while(0)
 #endif
 
 namespace fulla::storage {
 
     using core::byte_view;
+	template <storage::RandomAccessDevice RadT, typename PidT = std::uint32_t>
+	class buffer_manager {
+		using offset_type = typename RadT::offset_type;
+	public:
 
-    template <RandomAccessDevice DevT, typename PidT = std::uint32_t, typename StatsT = stats>
-    class buffer_manager {
-    public:
-        using PID = PidT;
-        using device_type = DevT;
-        static constexpr PID invalid_page_pid = std::numeric_limits<PID>::max();
+		using pid_type = PidT;
+		constexpr static const pid_type invalid_pid = std::numeric_limits<pid_type>::max();
 
-        struct frame {
-            PID           page_id { invalid_page_pid };
-            std::uint32_t pin     { 0 };
-            bool          dirty   { false };
-            bool          ref_bit { false };
-            std::uint32_t gen     { 0 };
-            fulla::core::byte_span data{};
+		struct frame {
 
-            void reinit(PID pid) {
-                page_id = pid;
-                pin     = 1;
-                dirty   = false;
-                ref_bit = true;
-                ++gen;
-            }
-        };
-        using frame_span = std::span<frame>;
+			frame() = default;
+			frame(const frame&) = delete;
+			frame& operator = (const frame&) = delete;
 
-        class page_handle {
-        public:
-            page_handle() = default;
-            page_handle(buffer_manager* pool, frame* f, std::uint32_t gen_snapshot)
-                : pool_(pool), f_(f), gen_(gen_snapshot) {
-                if (f_ != nullptr) { 
-                    f_->ref_bit = true; 
-                }
-            }
+			void reset() {
+				dirty = false;
+				pid = invalid_pid;
+				ref_count = 0;
+				data = {};
+			}
 
-            page_handle(const page_handle &other)
-                : pool_(other.pool_) 
-                , f_(other.f_)
-                , gen_(other.gen_)
-            {
-                if (f_ != nullptr) {
-                    f_->ref_bit = true;
-                    ++f_->pin;
-                }
-            };
+			void reinit(pid_type p, core::byte_span d) {
+				dirty = false;
+				pid = p;
+				ref_count = 0;
+				data = d;
+				++gen;
+			}
 
-            page_handle& operator=(const page_handle &other) {
-                if (this != &other) {
-                    reset();
-                    pool_ = other.pool_;
-                    f_ = other.f_;
-                    gen_ = other.gen_;
-                    if (f_ != nullptr) {
-                        f_->ref_bit = true;
-                        ++f_->pin;
-                    }
-                }
-                return *this;
-            }
+			void make_dirty() {
+				dirty = true;
+			}
 
-            page_handle(page_handle&& other) noexcept
-                : pool_(other.pool_)
-                , f_(other.f_)
-                , gen_(other.gen_) {
-                other.pool_ = nullptr; 
-                other.f_ = nullptr; 
-                other.gen_ = 0;
-            }
+			void ref() {
+				++ref_count;
+			}
 
-            page_handle& operator=(page_handle&& other) noexcept {
-                if (this != &other) {
-                    reset();
-                    pool_ = other.pool_; 
-                    f_ = other.f_; 
-                    gen_ = other.gen_;
-                    other.pool_ = nullptr; 
-                    other.f_ = nullptr; 
-                    other.gen_ = 0;
-                }
-                return *this;
-            }
+			void unref() {
+				DB_ASSERT(ref_count > 0, "Trying to unfer zero");
+				--ref_count;
+			}
 
-            ~page_handle() { reset(); }
+			bool is_valid() const noexcept {
+				return pid != invalid_pid;
+			}
 
-            explicit operator bool() const noexcept { return f_ != nullptr; }
-            PID id() const noexcept { return f_ ? f_->page_id : invalid_page_pid; }
+			bool dirty = false;
+			pid_type pid = invalid_pid;
+			std::atomic<std::size_t> ref_count = 0;
+			std::size_t gen = 1;
+			core::byte_span data;
+			frame* next = nullptr;
+			frame* prev = nullptr;
+		};
 
-            friend bool operator == (const page_handle& lhs, const page_handle& rhs) {
-                if (lhs.f_ && rhs.f_) {
-                    return (lhs.pool_ == rhs.pool_)
-                        && (lhs.f_ == rhs.f_)
-                        && (lhs.gen_ == rhs.gen_)
-                        ;
-                }
-                else {
-                    return (lhs.f_ == rhs.f_);
-                }
-            }
+		struct page_handle {
 
-            fulla::core::byte_view ro_span() const noexcept {
-                DB_ASSERT(!f_ || f_->gen == gen_, "stale handle: page was evicted/reused");
-                if (f_ == nullptr) { return {}; }
-                return { f_->data.data(), f_->data.size() };
-            }
+			page_handle() = default;
 
-            fulla::core::byte_span rw_span() {
-                DB_ASSERT(f_ && f_->gen == gen_, "stale handle: page was evicted/reused");
-                if (f_ == nullptr) { return {}; }
-                f_->dirty = true;
-                return { f_->data.data(), f_->data.size() };
-            }
+			page_handle(const page_handle& other) noexcept {
+				copy_impl(other);
+			}
 
-            void reset() noexcept {
-                if (pool_ != nullptr && f_ != nullptr) { pool_->unpin(f_); }
-                pool_ = nullptr; 
-                f_ = nullptr; 
-                gen_ = 0;
-            }
+			page_handle& operator = (const page_handle& other) noexcept {
+				copy_impl(other);
+				return *this;
+			}
 
-        private:
-            friend class buffer_manager;
-            buffer_manager*  pool_ { nullptr };
-            frame*           f_    { nullptr };
-            std::uint32_t    gen_  { 0 };
-        };
+			page_handle(page_handle&& other) noexcept {
+				move_impl(std::move(other));
+			}
 
-    public:
-        buffer_manager(device_type& dev, fulla::core::byte_span data_store, frame_span frame_store)
-            : dev_(dev)
-            , all_data_(data_store)
-            , frames_(frame_store) {
-            const auto ps = page_size();
-            DB_ASSERT(ps > 0, "page size must be > 0");
-            DB_ASSERT(all_data_.size() % ps == 0, "arena size must be multiple of page_size");
+			page_handle& operator = (page_handle&& other) noexcept {
+				move_impl(std::move(other));
+				return *this;
+			}
 
-            const auto total_frames = all_data_.size() / ps;
-            DB_ASSERT(frames_.size() == total_frames, "frames count must match arena pages");
+			page_handle(buffer_manager* mgr, frame* s)
+				: mgr_(mgr)
+				, slot_(s)
+			{
+				if (slot_) {
+					gen_ = slot_->gen;
+					slot_->ref();
+				}
+			}
 
-            page_map_.reserve(frames_.size());
-            for (std::size_t i = 0; i < total_frames; ++i) {
-                frames_[i].data = { all_data_.data() + (i * ps), ps };
-            }
-        }
+			~page_handle() noexcept {
+				unref();
+			}
 
-        std::size_t page_size() const { return dev_.block_size(); }
-        std::size_t capacity() const noexcept { return frames_.size(); }
+			pid_type pid() const noexcept {
+				if (slot_) {
+					return slot_->pid;
+				}
+				return invalid_pid;
+			}
 
-        page_handle create() {
-            st_.created_pages++;
-            PID pid = allocate_page();
-            frame* f = take_frame_for_new_page(pid);
-            DB_ASSERT(f != nullptr, "no frame available (all pinned)");
-            std::fill(f->data.begin(), f->data.end(), fulla::core::byte{0});
-            f->dirty = true;
-            return page_handle{ this, f, f->gen };
-        }
+			bool is_valid() const noexcept {
+				return pid() != invalid_pid;
+			}
 
-        page_handle fetch(PID pid) {
-            auto it = page_map_.find(pid);
-            if (it != page_map_.end()) {
-                frame* f = it->second;
-                st_.hits++;
-                ++f->pin;
-                f->ref_bit = true;
-                return page_handle{ this, f, f->gen };
-            }
-            st_.misses++;
-            frame* f = load_into_victim_with_evict(pid);
-            DB_ASSERT(f != nullptr, "no victim available (all pinned)");
-            return page_handle{ this, f, f->gen };
-        }
+			core::byte_span rw_span() noexcept {
+				if (slot_) {
+					DB_ASSERT(check_slot_gen(), "Bad slot");
+					slot_->make_dirty();
+					return slot_->data;
+				}
+				return {};
+			}
 
-        page_handle try_fetch(PID pid) {
-            auto it = page_map_.find(pid);
-            if (it != page_map_.end()) {
-                frame* f = it->second;
-                ++f->pin; 
-                f->ref_bit = true;
-                return page_handle{ this, f, f->gen };
-            }
-            if (auto* freef = try_take_free_frame()) {
-                if (!read(pid, freef->data)) { return {}; }
-                freef->reinit(pid);
-                page_map_.emplace(pid, freef);
-                return page_handle{ this, freef, freef->gen };
-            }
-            const auto idx = pick_victim();
-            if (idx == npos) { return {}; }
+			core::byte_view ro_span() const noexcept {
+				if (slot_) {
+					DB_ASSERT(check_slot_gen(), "Bad slot");
+					return { slot_->data.begin(), slot_->data.end() };
+				}
+				return {};
+			}
 
-            frame& vict = frames_[idx];
-            if (vict.page_id != invalid_page_pid) {
-                page_map_.erase(vict.page_id);
-            }
-            if (!read(pid, vict.data)) { return {}; }
-            vict.reinit(pid);
-            page_map_.emplace(pid, &vict);
-            return page_handle{ this, &vict, vict.gen };
-        }
+			friend bool operator == (const page_handle& lhs, const page_handle& rhs) {
+				return (lhs.slot_ == rhs.slot_);
+			}
 
-        void flush(PID pid, bool force = false) {
-            auto it = page_map_.find(pid);
-            DB_ASSERT(it != page_map_.end(), "flush: page not loaded");
-            frame* f = it->second;
-            if (!force) {
-                DB_ASSERT(f->pin == 0, "flush: page is pinned");
-            }
-            if (f->dirty) {
-                if (force) { 
-                    st_.forced_flushes++; 
-                }
-                write(pid, f->data); // best-effort
-                f->dirty = false;
-            }
-        }
+			//private:
 
-        void flush_all(bool force = false) {
-            for (auto& f : frames_) {
-                if (f.page_id != invalid_page_pid && f.dirty && ((f.pin == 0) || force)) {
-                    if (force) { 
-                        st_.forced_flushes++; 
-                    }
-                    write(f.page_id, f.data);
-                    f.dirty = false;
-                }
-            }
-        }
+			bool check_slot_gen() const noexcept {
+				if (slot_) {
+					return slot_->gen == gen_;
+				}
+				// empty slot, no check
+				return true;
+			}
 
-        void mark_dirty(PID pid) {
-            auto it = page_map_.find(pid);
-            DB_ASSERT(it != page_map_.end(), "mark_dirty: page not loaded");
-            it->second->dirty = true;
-        }
+			void copy_impl(const page_handle& other) noexcept {
+				if (this != &other) {
+					unref();
+					reset();
+					if (other.slot_) {
+						mgr_ = other.mgr_;
+						slot_ = other.slot_;
+						gen_ = other.gen_;
+						ref();
+					}
+				}
+			}
 
-        bool evict(PID pid) {
-            auto it = page_map_.find(pid);
-            if (it == page_map_.end()) { 
-                return false; 
-            }
-            frame* f = it->second;
-            if (f->pin != 0 || f->dirty) { 
-                return false; 
-            }
-            f->page_id = invalid_page_pid;
-            f->ref_bit = false;
-            ++f->gen;
-            page_map_.erase(it);
-            return true;
-        }
+			void move_impl(page_handle&& other) noexcept {
+				if (this != &other) {
+					unref();
+					reset();
+					if (other.slot_) {
+						mgr_ = other.mgr_;
+						slot_ = other.slot_;
+						gen_ = other.gen_;
+						other.reset();
+					}
+				}
+			}
 
-        const StatsT& get_stats() const noexcept { return st_; }
+			void ref() {
+				if (slot_) {
+					DB_ASSERT(check_slot_gen(), "Bad slot");
+					slot_->ref();
+				}
+			}
 
-        std::size_t resident_pages() const noexcept {
-            std::size_t c = 0;
-            for (auto& f : frames_) {
-                if (f.page_id != invalid_page_pid) { ++c; }
-            }
-            return c;
-        }
+			void unref() {
+				if (slot_) {
+					DB_ASSERT(check_slot_gen(), "Bad slot");
+					slot_->unref();
+				}
+			}
 
-        void unpin(frame* f) noexcept {
-            if (f == nullptr) { return; }
-            DB_ASSERT(f->pin > 0, "unpin underflow");
-            f->pin -= 1;
-        }
+			void reset() {
+				mgr_ = nullptr;
+				slot_ = nullptr;
+				gen_ = 0;
+			}
 
-    private:
-        static constexpr std::size_t npos = std::numeric_limits<std::size_t>::max();
+			buffer_manager* mgr_ = nullptr;
+			frame* slot_ = nullptr;
+			std::size_t gen_ = 0;
+		};
 
-        frame* take_frame_for_new_page(PID pid) {
-            if (auto* f = try_take_free_frame()) {
-                f->reinit(pid);
-                page_map_.emplace(pid, f);
-                return f;
-            }
-            const auto idx = pick_victim();
-            if (idx == npos) {
-                return nullptr;
-            }
+		using cache_map_type = std::unordered_map<pid_type, frame*>;
 
-            frame& vict = frames_[idx];
-            if (vict.page_id != invalid_page_pid) {
-                page_map_.erase(vict.page_id);
-                st_.evictions++;
-            }
-            vict.reinit(pid);
-            page_map_.emplace(pid, &vict);
-            return &vict;
-        }
+		buffer_manager(RadT& device, std::size_t maximum_pages)
+			: device_(&device)
+			, buffer_(maximum_pages* device.block_size())
+			, slots_(maximum_pages)
+		{
+			frame* last = nullptr;
+			for (auto& s : slots_) {
+				s.prev = last;
+				s.next = nullptr;
+				if (last) {
+					last->next = &s;
+				}
+				last = &s;
+			}
+			first_freed_ = &slots_[0];
+		}
 
-        frame* try_take_free_frame() {
-            for (auto& f : frames_) {
-                if (f.page_id == invalid_page_pid && (f.pin == 0)) { return &f; }
-            }
-            return nullptr;
-        }
+		page_handle create() {
+			if (auto fs_idx = find_free_slot()) {
+				auto buffer_data = slot_id_to_span(*fs_idx);
+				const auto new_off = device_->allocate_block();
+				const auto new_pid = device_offset_to_pid(new_off);
+				auto* fs = &slots_[*fs_idx];
+				fs->reinit(new_pid, buffer_data);
+				push_slot_used(fs);
+				cache_[new_pid] = fs;
+				return page_handle(this, fs);
+			}
+			return {};
+		}
 
-        frame* load_into_victim_with_evict(PID pid) {
-            if (auto* freef = try_take_free_frame()) {
-                if (!read(pid, freef->data)) { return nullptr; }
-                freef->reinit(pid);
-                page_map_.emplace(pid, freef);
-                return freef;
-            }
-            const std::size_t idx = pick_victim();
-            if (idx == npos) { return nullptr; }
+		page_handle fetch(pid_type pid) {
+			if (pid == invalid_pid) {
+				return {};
+			}
+			if (auto itr = cache_.find(pid); itr != cache_.end()) {
+				auto fs = itr->second;
+				pop_slot_from_list(fs);
+				push_slot_used(fs);
+				return { this, fs };
+			}
+			if (auto fs_idx = find_free_slot()) {
+				auto buffer_data = slot_id_to_span(*fs_idx);
+				const auto ok = read(pid, buffer_data);
+				if (ok) {
+					auto* fs = &slots_[*fs_idx];
+					fs->reinit(pid, buffer_data);
+					push_slot_used(fs);
+					cache_[pid] = fs;
+					return { this, fs };
+				}
+			}
+			return {};
+		}
 
-            frame& vict = frames_[idx];
-            if (vict.page_id != invalid_page_pid) {
-                page_map_.erase(vict.page_id);
-                st_.evictions++;
-            }
-            if (!read(pid, vict.data)) { return nullptr; }
-            vict.reinit(pid);
-            page_map_.emplace(pid, &vict);
-            return &vict;
-        }
+		std::size_t resident_pages() const noexcept {
+			std::size_t c = 0;
+			for (auto& s : slots_) {
+				if (s.is_valid()) {
+					++c;
+				}
+			}
+			return c;
+		}
 
-        std::size_t pick_victim() {
-            const auto n = frames_.size();
-            DB_ASSERT(n > 0, "no frames configured");
-            for (std::size_t step = 0; step < 2 * n; ++step) {
-                const std::uint32_t i = clock_hand_;
-                clock_hand_ = (clock_hand_ + 1) % n;
-                st_.clock_scans++;
-                frame& f = frames_[i];
-                if (f.pin != 0) { continue; }
-                if (f.ref_bit) {
-                    st_.refbit_clears++;
-                    f.ref_bit = false;
-                    continue;
-                }
-                if (f.dirty) {
-                    if (f.page_id != invalid_page_pid) {
-                        write(f.page_id, f.data);
-                        st_.writebacks++;
-                    }
-                    f.dirty = false;
-                    continue;
-                }
-                return i;
-            }
-            st_.pinned_fail++;
-            return npos;
-        }
+		std::size_t evict_inactive() {
+			std::size_t count = 0;
+			for (auto& s : slots_) {
+				if ((s.ref_count == 0) && (s.pid != invalid_pid)) {
+					pop_slot_from_list(&s);
+					evict(s.pid, true);
+					count++;
+				}
+			}
+			return count;
+		}
 
-        PID allocate_page() {
-            st_.alloc_pages++;
-            const auto pos = dev_.allocate_block();
-            DB_ASSERT(pos % page_size() == 0, "device returned misaligned block");
-            return static_cast<PID>(pos / page_size());
-        }
+		bool has_free_slots() const noexcept {
+			for (auto& s : slots_) {
+				if ((s.ref_count == 0) || (s.pid == invalid_pid)) {
+					return true;
+				}
+			}
+			return false;
+		}
 
-        bool read(PID pid, fulla::core::byte_span dst) {
-            DB_ASSERT(dst.size() == page_size(), "dst must be page_size");
-            const bool ok = dev_.read_at_offset(static_cast<position_type>(pid) * page_size(),
-                                                dst.data(), dst.size());
-            if (ok) { st_.reads++; }
-            return ok;
-        }
+		//private:
 
-        bool write(PID pid, fulla::core::byte_view src) {
-            DB_ASSERT(src.size() == page_size(), "src must be page_size");
-            const bool ok = dev_.write_at_offset(static_cast<position_type>(pid) * page_size(),
-                                                src.data(), src.size());
-            if (ok) { st_.writes++; }
-            return ok;
-        }
+		void flush_all() {
+			std::ranges::for_each(slots_, [this](auto& frame) { flush(&frame); });
+		}
 
-    private:
-        device_type& dev_;
-        fulla::core::byte_span all_data_;
-        frame_span frames_;
-        std::unordered_map<PID, frame*> page_map_;
-        std::uint32_t clock_hand_ { 0 };
-        StatsT st_{};
-    };
+		void flush(frame* fs) {
+			if (fs->dirty) {
+				const auto ok = write(fs->pid, fs->data);
+				if (ok) {
+					fs->dirty = false;
+				}
+			}
+		}
+
+		void evict(pid_type pid, bool push_free = false) {
+			auto itr = cache_.find(pid);
+			if (itr != cache_.end()) {
+				auto fs = itr->second;
+
+				DB_ASSERT(fs->ref_count == 0, "Trying to evict a pinned page");
+
+				flush(fs);
+				fs->reset();
+				cache_.erase(itr);
+				if (push_free) {
+					push_slot_freed(fs);
+				}
+			}
+		}
+
+		pid_type device_offset_to_pid(offset_type off) const noexcept {
+			DB_ASSERT(off % block_size() == 0, "offset must be aligned");
+			return static_cast<pid_type>(off / block_size());
+		}
+
+		core::byte_span slot_id_to_span(std::size_t id) {
+			const auto buff_off = slot_id_to_buffer_offset(id);
+			return { reinterpret_cast<core::byte*>(&buffer_[buff_off]), block_size() };
+		}
+
+		offset_type pid_to_device_offset(pid_type pid) const noexcept {
+			return static_cast<offset_type>(pid * block_size());
+		}
+
+		offset_type slot_id_to_buffer_offset(std::size_t id) const noexcept {
+			return static_cast<offset_type>(id * block_size());
+		}
+
+		bool valid_slot_id(std::size_t id) const noexcept {
+			return id < slots_.size();
+		}
+
+		auto block_size() const noexcept {
+			return device_->block_size();
+		}
+
+		auto page_size() const noexcept {
+			return block_size();
+		}
+
+		void push_slot_freed(frame* s) {
+			if (first_freed_) {
+				first_freed_->prev = s;
+			}
+			s->next = first_freed_;
+			first_freed_ = s;
+			first_freed_->prev = nullptr;
+		}
+
+		void push_slot_used(frame* s) {
+			if (first_used_) {
+				first_used_->prev = s;
+			}
+			s->next = first_used_;
+			first_used_ = s;
+			first_used_->prev = nullptr;
+			if (nullptr == last_used_) {
+				last_used_ = first_used_;
+			}
+		}
+
+		void pop_slot_from_list(frame* s) {
+			auto next = s->next;
+			auto prev = s->prev;
+			if (next) {
+				next->prev = prev;
+			}
+			if (prev) {
+				prev->next = next;
+			}
+			if (s == first_used_) {
+				first_used_ = next;
+			}
+			if (s == last_used_) {
+				last_used_ = prev;
+			}
+			if (s == first_freed_) {
+				first_freed_ = next;
+			}
+			s->next = s->prev = nullptr;
+		}
+
+		std::optional<std::size_t> find_free_slot() {
+
+			if (auto freed = try_pop_freed_slot()) {
+				return freed;
+			}
+
+			if (auto first = try_find_first_available()) {
+				return first;
+			}
+
+			return {};
+		}
+
+		std::optional<std::size_t> try_pop_freed_slot() {
+			if (first_freed_) {
+				auto s = first_freed_;
+				pop_slot_from_list(s);
+				return { std::distance(&slots_[0], s) };
+			}
+			return {};
+		}
+
+		std::optional<std::size_t> try_find_first_available() {
+			auto last = last_used_;
+			while (last) {
+				if (last->ref_count == 0) {
+					pop_slot_from_list(last);
+					evict(last->pid, false);
+					return { std::distance(&slots_[0], last) };
+				}
+				last = last->prev;
+			}
+			return {};
+		}
+
+		bool write(pid_type pid, core::byte_view data) {
+			const auto dev_off = pid_to_device_offset(pid);
+			DB_ASSERT(data.size() <= block_size(), "src must be page_size maximum");
+			const bool ok = device_->write_at_offset(dev_off, data.data(), data.size());
+			return ok;
+		}
+
+		bool read(pid_type pid, core::byte_span data) {
+			const auto dev_off = pid_to_device_offset(pid);
+			const auto ok = device_->read_at_offset(dev_off, data.data(), data.size());
+			return ok;
+		}
+
+		RadT* device_ = nullptr;
+		cache_map_type cache_;
+		core::byte_buffer buffer_;
+		std::vector<frame> slots_;
+		frame* first_used_ = nullptr;
+		frame* last_used_ = nullptr;
+		frame* first_freed_ = nullptr;
+	};
 
 } // namespace fulla::storage

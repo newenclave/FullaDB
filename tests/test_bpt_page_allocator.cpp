@@ -27,6 +27,7 @@ namespace {
 
 	using page_header_type = fulla::page::page_header;
 	using page_view_type = typename model_type::page_view_type;
+	using node_id_type = typename model_type::node_id_type;
 
 	using file_device = fulla::storage::file_device;
 
@@ -52,11 +53,9 @@ TEST_SUITE("bpt/paged/model allocator_type") {
 		auto path = temp_file("allocator");
 		{
 			file_device dev(path, DEFAULT_BUFFER_SIZE);
-			std::vector<byte> arena(DEFAULT_BUFFER_SIZE * 10);
 			using BM = buffer_manager<file_device>;
-			std::vector<typename BM::frame> frames(10);
-			BM bm(dev, byte_span{ arena.data(), arena.size() },
-				std::span{ frames.data(), frames.size() });
+
+			BM bm(dev, 10);
 
 			SUBCASE("create leaf") {
 				model_type::accessor_type acc(bm);
@@ -64,9 +63,9 @@ TEST_SUITE("bpt/paged/model allocator_type") {
 				CHECK(leaf.self() == 0);
 				CHECK(leaf.size() == 0);
 				CHECK(leaf.capacity() == 19);
-				CHECK(leaf.get_parent() == 0);
-				CHECK(leaf.get_next() == 0);
-				CHECK(leaf.get_prev() == 0);
+				CHECK(leaf.get_parent() == (node_id_type)-1);
+				CHECK(leaf.get_next() == (node_id_type)-1);
+				CHECK(leaf.get_prev() == (node_id_type)-1);
 
 				auto leaf2 = acc.create_leaf();
 				CHECK(leaf2.self() == 1);
@@ -80,7 +79,7 @@ TEST_SUITE("bpt/paged/model allocator_type") {
 				CHECK(leaf2.self() == leaf_copy.self());
 				CHECK(leaf2.get_parent() == leaf_copy.get_parent());
 
-				bm.flush_all(true);
+				bm.flush_all();
 			}
 
 			SUBCASE("load leaf") {

@@ -15,6 +15,7 @@ namespace fulla::bpt::memory::container {
     struct base {
 
         using node_id_type = NodeIdT;
+
         using key_type = KeyT;
         constexpr static const std::size_t max_elements = MaxElements;
 
@@ -39,7 +40,7 @@ namespace fulla::bpt::memory::container {
         bool is_leaf() const override {
             return false;
         }
-        node_id_type last_child_;
+        node_id_type last_child_ = {};
         core::static_vector<node_id_type, max_elements> children_;
     };
 

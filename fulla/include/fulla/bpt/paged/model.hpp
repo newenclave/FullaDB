@@ -38,6 +38,8 @@ namespace fulla::bpt::paged {
         using slot_directory_type = page::slots::variadic_directory_view<>;
         using page_view_type = page::page_view<slot_directory_type>;
 
+        using less_type = page::record_less;
+
         using node_id_type = PidT;
         constexpr static const node_id_type invalid_node_value = std::numeric_limits<node_id_type>::max();
 
@@ -154,7 +156,8 @@ namespace fulla::bpt::paged {
                 auto pv = get_page();
                 auto slots = pv.get_slots_dir();
                 if (pos < slots.size()) {
-                    return { extract_key(slots.get_slot(pos)) };
+                    auto res = key_out_type{ extract_key(slots.get_slot(pos)) };
+                    return res;
                 }
                 return {};
             }
@@ -221,7 +224,7 @@ namespace fulla::bpt::paged {
                 const auto key_proj = make_value_key_projector(pv);
                 const auto key_cmp = make_key_less();
 
-                auto it = std::ranges::upper_bound(slots_view, k.key, key_cmp, key_proj);
+                auto it = std::ranges::lower_bound(slots_view, k.key, key_cmp, key_proj);
                 return std::distance(slots_view.begin(), it);
             }
 
@@ -234,19 +237,24 @@ namespace fulla::bpt::paged {
 
                 if (slots.can_update(pos, new_full_len)) {
                     if (new_full_len > maximum_leaf_slot_size) {
+                        assert(false && "something went wrong");
                         return false;
                     }
                     byte_buffer new_value(new_full_len);
                     auto* slot_hdr = reinterpret_cast<page::bpt_leaf_slot*>(new_value.data());
-                    
                     slot_hdr->update(k.key.size());
+
                     std::memcpy(new_value.data() + slot_hdr->key_offset(), k.key.data(), k.key.size());
                     std::memcpy(new_value.data() + slot_hdr->value_offset(), old_value.data(), old_value.size());
 
-                    slots.update(pos, {new_value});
+                    if (!slots.update(pos, { new_value })) {
+                        assert(false && "something went wrong");
+                        return false;
+                    }
 
                     return true;
                 }
+                assert(false && "something went wrong");
                 return false; // ?
             }
 
@@ -254,6 +262,7 @@ namespace fulla::bpt::paged {
                 auto slots = this->get_slots();
                 auto new_full_len = sizeof(page::bpt_leaf_slot) + k.key.size() + v.val.size();
                 if (new_full_len > maximum_leaf_slot_size) {
+                    assert(false && "maximum_leaf_slot_size reached");
                     return false;
                 }
 
@@ -265,6 +274,7 @@ namespace fulla::bpt::paged {
                     std::memcpy(data.data() + hdr->value_offset(), v.val.data(), v.val.size());
                     return true;
                 }
+                assert(false && "something went wrong");
                 return false;
             }
 
@@ -275,6 +285,7 @@ namespace fulla::bpt::paged {
                 const auto old_key = leaf_key_extractor{}(old_data);
                 const auto new_size = sizeof(page::bpt_leaf_slot) + old_key.size() + v.val.size();
                 if (new_size > maximum_leaf_slot_size) {
+                    assert(false && "something went wrong");
                     return false;
                 }
                 if (slots.can_update(pos, new_size)) {
@@ -283,8 +294,12 @@ namespace fulla::bpt::paged {
                     new_hdr->update(old_key.size());
                     std::memcpy(new_data.data() + new_hdr->key_offset(), old_key.data(), old_key.size());
                     std::memcpy(new_data.data() + new_hdr->value_offset(), v.val.data(), v.val.size());
-                    return slots.update(pos, { new_data });
+                    if (!slots.update(pos, { new_data })) {
+                        return false;
+                    }
+                    return true;
                 }
+                assert(false && "something went wrong");
                 return false;
             }
 
@@ -400,6 +415,7 @@ namespace fulla::bpt::paged {
                 const auto old_child_value = old_slot_hdr->child;
                 const auto new_len = sizeof(page::bpt_inode_slot) + k.key.size();
                 if (new_len > maximum_inode_slot_size) {
+                    assert(false && "something went wrong");
                     return false;
                 }
                 if (slots.update_reserve(pos, new_len)) {
@@ -409,6 +425,7 @@ namespace fulla::bpt::paged {
                     std::memcpy(new_value.data() + slot_hdr->key_offset(), k.key.data(), k.key.size());
                     return true;
                 }
+                assert(false && "something went wrong");
                 return false; // ?
             }
 
@@ -498,47 +515,63 @@ namespace fulla::bpt::paged {
 
             leaf_type create_leaf() {
                 auto new_page = mgr_.create();
-                auto pv = page_view_type{ new_page.rw_span() };
-                const auto page_id = new_page.id();
-                pv.header().init(page::page_kind::bpt_leaf, mgr_.page_size(), page_id, sizeof(page::bpt_leaf_header));
-                pv.get_slots_dir().init();
-                auto subhdr = pv.subheader<page::bpt_leaf_header>();
-                subhdr->init();
+                if (new_page.is_valid()) {
+                    auto pv = page_view_type{ new_page.rw_span() };
+                    const auto page_id = new_page.pid();
+                    pv.header().init(page::page_kind::bpt_leaf, mgr_.page_size(), page_id, sizeof(page::bpt_leaf_header));
+                    pv.get_slots_dir().init();
+                    auto subhdr = pv.subheader<page::bpt_leaf_header>();
+                    subhdr->init();
+                    subhdr->parent = invalid_node_value;
+                    subhdr->next = invalid_node_value;
+                    subhdr->prev = invalid_node_value;
 
-                return {pv, page_id, std::move(new_page) };
+                    return { pv, page_id, std::move(new_page) };
+                }
+                return {};
             }
             
             inode_type create_inode() {
                 auto new_page = mgr_.create();
-                auto pv = page_view_type{ new_page.rw_span() };
-                const auto page_id = new_page.id();
-                pv.header().init(page::page_kind::bpt_inode, mgr_.page_size(), page_id, sizeof(page::bpt_inode_header));
-                pv.get_slots_dir().init();
-                auto subhdr = pv.subheader<page::bpt_inode_header>();
-                subhdr->init();
-                return { pv, page_id, std::move(new_page) };
+                if (new_page.is_valid()) {
+                    auto pv = page_view_type{ new_page.rw_span() };
+                    const auto page_id = new_page.pid();
+                    pv.header().init(page::page_kind::bpt_inode, mgr_.page_size(), page_id, sizeof(page::bpt_inode_header));
+                    pv.get_slots_dir().init();
+                    auto subhdr = pv.subheader<page::bpt_inode_header>();
+                    subhdr->init();
+                    subhdr->parent = invalid_node_value;
+                    return { pv, page_id, std::move(new_page) };
+                }
+                return { };
             }
 
-            bool destroy(node_id_type id) {
+            bool destroy(node_id_type) {
                 return true;
             }
 
             leaf_type load_leaf(node_id_type id) {
-                auto new_page = mgr_.try_fetch(id);
-                if (new_page) {
-                    const auto page_id = new_page.id();
+                auto new_page = mgr_.fetch(id);
+                if (new_page.is_valid()) {
+                    const auto page_id = new_page.pid();
                     auto data = new_page.rw_span();
-                    return leaf_type{ page_view_type { data }, page_id, std::move(new_page) };
+                    auto pv = page_view_type{ data };
+                    if (pv.header().kind == static_cast<std::uint16_t>(page::page_kind::bpt_leaf)) {
+                        return leaf_type{ pv, page_id, std::move(new_page) };
+                    }
                 }
                 return {};
             }
             
             inode_type load_inode(node_id_type id) {
-                auto new_page = mgr_.try_fetch(id);
-                if (new_page) {
-                    const auto page_id = new_page.id();
+                auto new_page = mgr_.fetch(id);
+                if (new_page.is_valid()) {
+                    const auto page_id = new_page.pid();
                     auto data = new_page.rw_span();
-                    return inode_type{ page_view_type { data }, page_id, std::move(new_page) };
+                    auto pv = page_view_type{ data };
+                    if (pv.header().kind == static_cast<std::uint16_t>(page::page_kind::bpt_inode)) {
+                        return inode_type{ pv, page_id, std::move(new_page) };
+                    }
                 }
                 return {};
             }
@@ -572,10 +605,60 @@ namespace fulla::bpt::paged {
             }
 
             std::optional<node_id_type> root_ {};
-            buffer_manager_type mgr_;
+            buffer_manager_type &mgr_;
         };
 
         static_assert(concepts::NodeAccessor<accessor_type, node_id_type, inode_type, leaf_type>);
+
+        static key_like_type key_out_as_like(key_out_type kout) {
+            const key_like_type res = { kout.key };
+            return res;
+        }
+
+        static key_like_type key_borrow_as_like(const key_borrow_type &kbor) {
+            return { kbor.key };
+        }
+
+        static value_in_type value_out_as_in(value_out_type vout) {
+            return { vout.val };
+        }
+
+        static value_in_type value_borrow_as_in(const value_borrow_type &vbor) {
+            return { vbor.val };
+        }
+
+        bool is_valid_id(node_id_type id) {
+            return (id != invalid_node_value) && (accessor_.mgr_.fetch(id).is_valid());
+        }
+
+        bool is_leaf_id(node_id_type id) {
+            auto p = accessor_.mgr_.fetch(id);
+            if (p.is_valid()) {
+                return reinterpret_cast<const page::page_header*>(p.ro_span().data())->kind 
+                    == static_cast<std::uint16_t>(page::page_kind::bpt_leaf);
+            }
+            return false;
+        }
+
+        constexpr static node_id_type get_invalid_node_id() {
+            return invalid_node_value;
+        }
+
+        static std::string id_as_string(node_id_type id) {
+            return std::to_string(id);
+        }
+
+        static std::string key_as_string(const key_out_type &kout) {
+            std::ostringstream oss;
+            codec::data_view::debug_print(oss, kout.key, "");
+            return oss.str();
+        }
+
+        static std::string value_as_string(const value_out_type vout) {
+            std::string res(reinterpret_cast<const char*>(vout.val.data()), vout.val.size());
+            return res;
+            //return std::to_string(vout.val.size());
+        }
 
         accessor_type &get_accessor() {
             return accessor_;
