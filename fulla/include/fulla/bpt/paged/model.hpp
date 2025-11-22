@@ -628,7 +628,7 @@ namespace fulla::bpt::paged {
         }
 
         bool is_valid_id(node_id_type id) {
-            return (id != invalid_node_value) && (accessor_.mgr_.fetch(id).is_valid());
+            return (id != invalid_node_value) && (accessor_.mgr_.valid_pid(id));
         }
 
         bool is_leaf_id(node_id_type id) {

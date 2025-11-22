@@ -107,11 +107,11 @@ namespace fulla::storage {
 
 			page_handle(buffer_manager* mgr, frame* s)
 				: mgr_(mgr)
-				, slot_(s)
+				, frame_(s)
 			{
-				if (slot_) {
-					gen_ = slot_->gen;
-					slot_->ref();
+				if (frame_) {
+					gen_ = frame_->gen;
+					frame_->ref();
 				}
 			}
 
@@ -120,8 +120,8 @@ namespace fulla::storage {
 			}
 
 			pid_type pid() const noexcept {
-				if (slot_) {
-					return slot_->pid;
+				if (frame_) {
+					return frame_->pid;
 				}
 				return invalid_pid;
 			}
@@ -131,31 +131,31 @@ namespace fulla::storage {
 			}
 
 			core::byte_span rw_span() noexcept {
-				if (slot_) {
+				if (frame_) {
 					DB_ASSERT(check_slot_gen(), "Bad slot");
-					slot_->make_dirty();
-					return slot_->data;
+					frame_->make_dirty();
+					return frame_->data;
 				}
 				return {};
 			}
 
 			core::byte_view ro_span() const noexcept {
-				if (slot_) {
+				if (frame_) {
 					DB_ASSERT(check_slot_gen(), "Bad slot");
-					return { slot_->data.begin(), slot_->data.end() };
+					return { frame_->data.begin(), frame_->data.end() };
 				}
 				return {};
 			}
 
 			friend bool operator == (const page_handle& lhs, const page_handle& rhs) {
-				return (lhs.slot_ == rhs.slot_);
+				return (lhs.frame_ == rhs.frame_);
 			}
 
 			//private:
 
 			bool check_slot_gen() const noexcept {
-				if (slot_) {
-					return slot_->gen == gen_;
+				if (frame_) {
+					return frame_->gen == gen_;
 				}
 				// empty slot, no check
 				return true;
@@ -165,9 +165,9 @@ namespace fulla::storage {
 				if (this != &other) {
 					unref();
 					reset();
-					if (other.slot_) {
+					if (other.frame_) {
 						mgr_ = other.mgr_;
-						slot_ = other.slot_;
+						frame_ = other.frame_;
 						gen_ = other.gen_;
 						ref();
 					}
@@ -178,9 +178,9 @@ namespace fulla::storage {
 				if (this != &other) {
 					unref();
 					reset();
-					if (other.slot_) {
+					if (other.frame_) {
 						mgr_ = other.mgr_;
-						slot_ = other.slot_;
+						frame_ = other.frame_;
 						gen_ = other.gen_;
 						other.reset();
 					}
@@ -188,27 +188,27 @@ namespace fulla::storage {
 			}
 
 			void ref() {
-				if (slot_) {
+				if (frame_) {
 					DB_ASSERT(check_slot_gen(), "Bad slot");
-					slot_->ref();
+					frame_->ref();
 				}
 			}
 
 			void unref() {
-				if (slot_) {
+				if (frame_) {
 					DB_ASSERT(check_slot_gen(), "Bad slot");
-					slot_->unref();
+					frame_->unref();
 				}
 			}
 
 			void reset() {
 				mgr_ = nullptr;
-				slot_ = nullptr;
+				frame_ = nullptr;
 				gen_ = 0;
 			}
 
 			buffer_manager* mgr_ = nullptr;
-			frame* slot_ = nullptr;
+			frame* frame_ = nullptr;
 			std::size_t gen_ = 0;
 		};
 
@@ -217,10 +217,10 @@ namespace fulla::storage {
 		buffer_manager(RadT& device, std::size_t maximum_pages)
 			: device_(&device)
 			, buffer_(maximum_pages* device.block_size())
-			, slots_(maximum_pages)
+			, frames_(maximum_pages)
 		{
 			frame* last = nullptr;
-			for (auto& s : slots_) {
+			for (auto& s : frames_) {
 				s.prev = last;
 				s.next = nullptr;
 				if (last) {
@@ -228,17 +228,17 @@ namespace fulla::storage {
 				}
 				last = &s;
 			}
-			first_freed_ = &slots_[0];
+			first_freed_ = &frames_[0];
 		}
 
 		page_handle create() {
-			if (auto fs_idx = find_free_slot()) {
-				auto buffer_data = slot_id_to_span(*fs_idx);
+			if (auto fs_idx = find_free_frame()) {
+				auto buffer_data = frame_id_to_span(*fs_idx);
 				const auto new_off = device_->allocate_block();
 				const auto new_pid = device_offset_to_pid(new_off);
-				auto* fs = &slots_[*fs_idx];
+				auto* fs = &frames_[*fs_idx];
 				fs->reinit(new_pid, buffer_data);
-				push_slot_used(fs);
+				push_frame_used(fs);
 				cache_[new_pid] = fs;
 				return page_handle(this, fs);
 			}
@@ -251,17 +251,17 @@ namespace fulla::storage {
 			}
 			if (auto itr = cache_.find(pid); itr != cache_.end()) {
 				auto fs = itr->second;
-				pop_slot_from_list(fs);
-				push_slot_used(fs);
+				pop_frame_from_list(fs);
+				push_frame_used(fs);
 				return { this, fs };
 			}
-			if (auto fs_idx = find_free_slot()) {
-				auto buffer_data = slot_id_to_span(*fs_idx);
+			if (auto fs_idx = find_free_frame()) {
+				auto buffer_data = frame_id_to_span(*fs_idx);
 				const auto ok = read(pid, buffer_data);
 				if (ok) {
-					auto* fs = &slots_[*fs_idx];
+					auto* fs = &frames_[*fs_idx];
 					fs->reinit(pid, buffer_data);
-					push_slot_used(fs);
+					push_frame_used(fs);
 					cache_[pid] = fs;
 					return { this, fs };
 				}
@@ -271,7 +271,7 @@ namespace fulla::storage {
 
 		std::size_t resident_pages() const noexcept {
 			std::size_t c = 0;
-			for (auto& s : slots_) {
+			for (auto& s : frames_) {
 				if (s.is_valid()) {
 					++c;
 				}
@@ -281,9 +281,9 @@ namespace fulla::storage {
 
 		std::size_t evict_inactive() {
 			std::size_t count = 0;
-			for (auto& s : slots_) {
+			for (auto& s : frames_) {
 				if ((s.ref_count == 0) && (s.pid != invalid_pid)) {
-					pop_slot_from_list(&s);
+					pop_frame_from_list(&s);
 					evict(s.pid, true);
 					count++;
 				}
@@ -291,8 +291,8 @@ namespace fulla::storage {
 			return count;
 		}
 
-		bool has_free_slots() const noexcept {
-			for (auto& s : slots_) {
+		bool has_free_frames() const noexcept {
+			for (auto& s : frames_) {
 				if ((s.ref_count == 0) || (s.pid == invalid_pid)) {
 					return true;
 				}
@@ -303,7 +303,7 @@ namespace fulla::storage {
 		//private:
 
 		void flush_all() {
-			std::ranges::for_each(slots_, [this](auto& frame) { flush(&frame); });
+			std::ranges::for_each(frames_, [this](auto& frame) { flush(&frame); });
 		}
 
 		void flush(frame* fs) {
@@ -326,7 +326,7 @@ namespace fulla::storage {
 				fs->reset();
 				cache_.erase(itr);
 				if (push_free) {
-					push_slot_freed(fs);
+					push_frame_freed(fs);
 				}
 			}
 		}
@@ -336,8 +336,8 @@ namespace fulla::storage {
 			return static_cast<pid_type>(off / block_size());
 		}
 
-		core::byte_span slot_id_to_span(std::size_t id) {
-			const auto buff_off = slot_id_to_buffer_offset(id);
+		core::byte_span frame_id_to_span(std::size_t id) {
+			const auto buff_off = frame_id_to_buffer_offset(id);
 			return { reinterpret_cast<core::byte*>(&buffer_[buff_off]), block_size() };
 		}
 
@@ -345,12 +345,17 @@ namespace fulla::storage {
 			return static_cast<offset_type>(pid * block_size());
 		}
 
-		offset_type slot_id_to_buffer_offset(std::size_t id) const noexcept {
+		offset_type frame_id_to_buffer_offset(std::size_t id) const noexcept {
 			return static_cast<offset_type>(id * block_size());
 		}
 
 		bool valid_slot_id(std::size_t id) const noexcept {
-			return id < slots_.size();
+			return id < frames_.size();
+		}
+
+		bool valid_pid(pid_type pid) const {
+			const auto off = pid_to_device_offset(pid);
+			return off <= (device_->get_file_size() - block_size());
 		}
 
 		auto block_size() const noexcept {
@@ -361,7 +366,7 @@ namespace fulla::storage {
 			return block_size();
 		}
 
-		void push_slot_freed(frame* s) {
+		void push_frame_freed(frame* s) {
 			if (first_freed_) {
 				first_freed_->prev = s;
 			}
@@ -370,7 +375,7 @@ namespace fulla::storage {
 			first_freed_->prev = nullptr;
 		}
 
-		void push_slot_used(frame* s) {
+		void push_frame_used(frame* s) {
 			if (first_used_) {
 				first_used_->prev = s;
 			}
@@ -382,7 +387,7 @@ namespace fulla::storage {
 			}
 		}
 
-		void pop_slot_from_list(frame* s) {
+		void pop_frame_from_list(frame* s) {
 			auto next = s->next;
 			auto prev = s->prev;
 			if (next) {
@@ -403,9 +408,9 @@ namespace fulla::storage {
 			s->next = s->prev = nullptr;
 		}
 
-		std::optional<std::size_t> find_free_slot() {
+		std::optional<std::size_t> find_free_frame() {
 
-			if (auto freed = try_pop_freed_slot()) {
+			if (auto freed = try_pop_freed_frame()) {
 				return freed;
 			}
 
@@ -416,11 +421,11 @@ namespace fulla::storage {
 			return {};
 		}
 
-		std::optional<std::size_t> try_pop_freed_slot() {
+		std::optional<std::size_t> try_pop_freed_frame() {
 			if (first_freed_) {
 				auto s = first_freed_;
-				pop_slot_from_list(s);
-				return { std::distance(&slots_[0], s) };
+				pop_frame_from_list(s);
+				return { std::distance(&frames_[0], s) };
 			}
 			return {};
 		}
@@ -429,9 +434,9 @@ namespace fulla::storage {
 			auto last = last_used_;
 			while (last) {
 				if (last->ref_count == 0) {
-					pop_slot_from_list(last);
+					pop_frame_from_list(last);
 					evict(last->pid, false);
-					return { std::distance(&slots_[0], last) };
+					return { std::distance(&frames_[0], last) };
 				}
 				last = last->prev;
 			}
@@ -454,7 +459,7 @@ namespace fulla::storage {
 		RadT* device_ = nullptr;
 		cache_map_type cache_;
 		core::byte_buffer buffer_;
-		std::vector<frame> slots_;
+		std::vector<frame> frames_;
 		frame* first_used_ = nullptr;
 		frame* last_used_ = nullptr;
 		frame* first_freed_ = nullptr;

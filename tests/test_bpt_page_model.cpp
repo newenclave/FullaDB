@@ -101,10 +101,10 @@ TEST_SUITE("bpt/paged/model bpt") {
 
 	TEST_CASE("creating") {
 
-		auto path = temp_file("allocator");
+		auto path = temp_file("test_page_model");
 		{
 
-			constexpr static const auto small_buffer_size = DEFAULT_BUFFER_SIZE;
+			constexpr static const auto small_buffer_size = DEFAULT_BUFFER_SIZE / 4;
 
 			file_device dev(path, small_buffer_size);
 			using BM = buffer_manager<file_device>;
@@ -115,13 +115,13 @@ TEST_SUITE("bpt/paged/model bpt") {
 			SUBCASE("create tree") {
 				bpt_type bpt(bm);
 				std::map<std::string, std::string> test;
-				for (unsigned int i = 0; i < 2000; ++i) {
+				for (unsigned int i = 0; i < 20000; ++i) {
 					auto ts = get_random_string(10, 5);
 					auto key = prop::make_record(prop::str{ts});
 					if (!test.contains(ts)) {
 						test[ts] = ts;
-						CHECK(bm.has_free_slots());
-						REQUIRE(bpt.insert(key_like_type{ key.view() }, as_value_in(ts)));
+						CHECK(bm.has_free_frames());
+						REQUIRE(bpt.insert(key_like_type{ key.view() }, as_value_in(ts), policies::insert::insert, policies::rebalance::neighbor_share));
 					}
 					else {
 						std::cout << "";
@@ -140,10 +140,14 @@ TEST_SUITE("bpt/paged/model bpt") {
 					}
 				};
 
-				check_map();
-				
+				check_map();				
 				validate_keys(bpt);
-				for (unsigned int i = 0; i < 1000; ++i) {
+
+				//bpt.dump();
+				//std::cout << "=====================\n";
+
+				const auto tsize = test.size();
+				for (unsigned int i = 0; i < tsize / 2; ++i) {
 
 					std::uniform_int_distribution<std::size_t> dist(0, test.size() - 1);
 					auto idx = dist(gen);
@@ -157,17 +161,22 @@ TEST_SUITE("bpt/paged/model bpt") {
 						std::cout << "";
 					}
 
-					//check_map();
 					CHECK(bpt.end() != it);
 					test.erase(itr);
 					bpt.erase(it);
-					//bpt.remove(key_like_type{ key.view() });
+				}
+
+				for (auto &t: test) {
+					auto ts = get_random_string(10, 5);
+					auto key = prop::make_record(prop::str{ t.first });
+					REQUIRE(bpt.update(key_like_type{ key.view() }, as_value_in(ts), policies::rebalance::neighbor_share));
+					test[t.first] = ts;
 				}
 
 				validate_keys(bpt);
 				check_map();
 
-				bpt.dump();
+				//bpt.dump();
 
 			}
 

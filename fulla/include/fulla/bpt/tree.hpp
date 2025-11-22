@@ -60,7 +60,7 @@ namespace fulla::bpt {
 
             iterator(tree* t, node_id_type leaf, std::size_t idx)
                 : tree_(t)
-                , leaf_(leaf)
+                , leaf_id_(leaf)
                 , idx_(idx)
             {
             }
@@ -81,14 +81,14 @@ namespace fulla::bpt {
 
             iterator& operator++() {
                 invalidate_cache();
-                auto leaf = tree_->model_.get_accessor().load_leaf(leaf_);
+                auto leaf = tree_->model_.get_accessor().load_leaf(leaf_id_);
                 if (idx_ + 1 < leaf.size()) {
                     ++idx_;
                 }
                 else {
                     auto nxt = leaf.get_next();
                     if (!is_end()) {
-                        leaf_ = nxt;
+                        leaf_id_ = nxt;
                         idx_ = 0;
                     }
                 }
@@ -107,8 +107,8 @@ namespace fulla::bpt {
                     // end() -> last element
                     auto [root, exists] = tree_->model_.get_accessor().load_root();
                     if (exists) {
-                        leaf_ = tree_->get_rightmost_leaf(root);
-                        auto leaf = tree_->model_.get_accessor().load_leaf(leaf_);
+                        leaf_id_ = tree_->get_rightmost_leaf(root);
+                        auto leaf = tree_->model_.get_accessor().load_leaf(leaf_id_);
                         idx_ = leaf.size() - 1;
                     }
                     return *this;
@@ -117,10 +117,10 @@ namespace fulla::bpt {
                     --idx_;
                 }
                 else {
-                    auto leaf = tree_->model_.get_accessor().load_leaf(leaf_);
+                    auto leaf = tree_->model_.get_accessor().load_leaf(leaf_id_);
                     auto prv = leaf.get_prev();
                     auto pnode = tree_->model_.get_accessor().load_leaf(prv);
-                    leaf_ = prv;
+                    leaf_id_ = prv;
                     idx_ = pnode.size() - 1;
                 }
                 return *this;
@@ -153,14 +153,22 @@ namespace fulla::bpt {
             }
 
             friend bool operator==(const iterator& a, const iterator& b) {
-                return (a.tree_ == b.tree_) && (a.leaf_ == b.leaf_) && (a.idx_ == b.idx_);
+                return (a.tree_ == b.tree_) && (a.leaf_id_ == b.leaf_id_) && (a.idx_ == b.idx_);
+            }
+
+            node_id_type node_id() const noexcept {
+                return leaf_id_;
+            }
+
+            std::size_t position() const noexcept {
+                return idx_;
             }
 
         private:
 
             const value_type& deref() const {
                 if (!cache_) {
-                    auto leaf = tree_->model_.get_accessor().load_leaf(leaf_);
+                    auto leaf = tree_->model_.get_accessor().load_leaf(leaf_id_);
                     assert(leaf.is_valid() && "Something went wrong. leaf is not valid");
                     cache_.emplace(leaf.get_key(idx_), leaf.get_value(idx_));
                 }
@@ -176,12 +184,12 @@ namespace fulla::bpt {
             }
 
             bool is_end() const {
-                return !tree_->model_.is_valid_id(leaf_);
+                return !tree_->model_.is_valid_id(leaf_id_);
             }
 
             tree* tree_{};
-            node_id_type leaf_ {};
-            std::size_t idx_{ (std::size_t)(-1)};
+            node_id_type leaf_id_ {};
+            std::size_t idx_{ npos };
             mutable std::optional<value_type> cache_;
         };
 
@@ -237,8 +245,8 @@ namespace fulla::bpt {
                     return true;
                 }
                 else if (ip == policies::insert::upsert) {
-                    leaf.update_value(pos, std::move(value));
-                    return true;
+                    // TODO: check for overflow here
+                    return leaf.update_value(pos, std::move(value));
                 }
             }
             return false;
@@ -260,25 +268,29 @@ namespace fulla::bpt {
                     if (rp == policies::rebalance::force_split) {
                         auto right = handle_leaf_overflow_for_update(leaf, rp);
                         if (pos < leaf.size()) {
-                            leaf.update_value(pos, std::move(value));
+                            return leaf.update_value(pos, std::move(value));
                         }
                         else {
-                            right.update_value(pos - leaf.size(), std::move(value));
+                            return right.update_value(pos - leaf.size(), std::move(value));
                         }
                     }
                     else {
                         if (!try_leaf_neighbor_share_for_update(leaf, value, pos, rp)) {
                             auto right = handle_leaf_overflow_for_update(leaf, rp);
                             if (pos < leaf.size()) {
-                                leaf.update_value(pos, std::move(value));
+                                return leaf.update_value(pos, std::move(value));
                             }
                             else {
-                                right.update_value(pos - leaf.size(), std::move(value));
+                                return right.update_value(pos - leaf.size(), std::move(value));
                             }
                         }
+                    
                     }
-
                 }
+                else {
+                    return leaf.update_value(pos, value);
+                }
+
             }
             return false;
         }
@@ -316,7 +328,7 @@ namespace fulla::bpt {
 #else   // good but not as good as it could be.
         void erase(iterator where) {
             if (where != end()) {
-                auto node = model_.get_accessor().load_leaf(where.leaf_);
+                auto node = model_.get_accessor().load_leaf(where.leaf_id_);
                 remove_impl(node, where.idx_);
             }
         }
@@ -665,6 +677,7 @@ namespace fulla::bpt {
                 if (node.keys_eq(key, out_like)) {
                     const auto first_leaf = accessor.load_leaf(get_leftmost_leaf(node.get_child(pos)));
                     const auto first_like = model_.key_out_as_like(first_leaf.get_key(0));
+                    // TODO: check for overflow here
                     node.update_key(pos - 1, first_like);
                 }
             }
@@ -683,7 +696,7 @@ namespace fulla::bpt {
             }
         }
 
-        void handle_leaf_underflow(leaf_type& node, const key_like_type& key) {
+        leaf_type handle_leaf_underflow(leaf_type node, const key_like_type& key) {
 
             auto tmp = try_merge_leaf(node);
             if (tmp.is_valid()) {
@@ -697,6 +710,7 @@ namespace fulla::bpt {
                 handle_inode_underflow(parent, key);
                 fix_zero_root(parent);
             }
+            return node;
         }
 
         void fix_zero_root(inode_type& node) {
@@ -745,6 +759,7 @@ namespace fulla::bpt {
 
                 auto parent = get_accessor().load_inode(node.get_parent());
                 auto pos = find_child_index_in_parent(parent, node.self());
+                // TODO: check for overflow here
                 parent.update_key(pos - 1, model_.key_out_as_like(node.get_key(0)));
 
                 return true;
@@ -779,6 +794,7 @@ namespace fulla::bpt {
 
                 auto parent = get_accessor().load_inode(node.get_parent());
                 auto pos = find_child_index_in_parent(parent, node.self());
+                // TODO: check for overflow here
                 parent.update_key(pos, model_.key_out_as_like(right.get_key(0)));
 
                 return true;
@@ -856,6 +872,7 @@ namespace fulla::bpt {
 
                 visit_node([&](auto& c) { c.set_parent(node.self()); }, child);
 
+                // TODO: check for overflow here
                 parent.update_key(pos - 1, std::move(key));
                 node.insert_child(0, parent_key, child);
 
@@ -897,6 +914,7 @@ namespace fulla::bpt {
 
                 visit_node([&](auto& c) { c.set_parent(node.self()); }, child);
 
+                // TODO: check for overflow here
                 parent.update_key(pos, key);
                 const auto last_child = node.get_child(node.size());
 
@@ -1322,6 +1340,7 @@ namespace fulla::bpt {
             auto parent = get_accessor().load_inode(node.get_parent());
             const auto pos = find_child_index_in_parent(parent, node.self());
             if (pos != npos && pos > 0) {
+                // TODO: check for overflow here
                 parent.update_key(pos - 1, model_.key_out_as_like(node.get_key(0)));
             }
         }

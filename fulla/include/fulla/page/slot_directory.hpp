@@ -273,7 +273,6 @@ namespace fulla::page::slots {
                     }
                 }
             }
-
             if (!mem.empty()) {
                 auto slots = allocate_slot();
                 expand_at(pos);
