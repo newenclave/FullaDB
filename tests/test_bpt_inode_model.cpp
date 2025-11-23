@@ -60,7 +60,7 @@ TEST_SUITE("bpt/page/model/inode") {
 
 	TEST_CASE("bpt::inode model inode_type") {
 		auto page = make_inode_page(4096);
-		model_type::inode_type inode(page_view_type{ page }, 100, {});
+		model_type::inode_type inode(page_view_type{ page }, 100, {}, 5, 200);
 		auto slots = page_view_type{ page }.get_slots_dir();
 		CHECK_EQ(inode.self(), 100);
 		auto capacity = inode.capacity();

@@ -17,13 +17,10 @@
 #include <atomic>
 
 #include "fulla/core/bytes.hpp"
+#include "fulla/core/assert.hpp"
 #include "fulla/storage/device.hpp" // RandomAccessDevice, position_type
 #include "fulla/storage/stats.hpp"  // stats / null_stats
 
-#ifndef DB_ASSERT
-#include <cassert>
-#define DB_ASSERT(cond, msg) do { (void)(msg); assert(cond); } while(0)
-#endif
 
 namespace fulla::storage {
 

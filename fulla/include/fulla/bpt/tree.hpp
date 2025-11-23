@@ -829,9 +829,14 @@ namespace fulla::bpt {
                 }
                 else {
                     pos--;
-                    node.insert_value(pos, key, std::move(value));
-                    if (pos == 0) {
-                        fix_parent_index(node);
+                    if (node.can_insert_value(pos, key, value)) {
+                        node.insert_value(pos, key, std::move(value));
+                        if (pos == 0) {
+                            fix_parent_index(node);
+                        }
+                    }
+                    else {
+                        return false;
                     }
                 }
                 return true;
@@ -844,9 +849,14 @@ namespace fulla::bpt {
                     fix_parent_index(right_sibling);
                 }
                 else {
-                    node.insert_value(pos, key, std::move(value));
-                    if (pos == 0) {
-                        fix_parent_index(node);
+                    if (node.can_insert_value(pos, key, value)) {
+                        node.insert_value(pos, key, std::move(value));
+                        if (pos == 0) {
+                            fix_parent_index(node);
+                        }
+                    }
+                    else {
+                        return false;
                     }
                 }
                 return true;

@@ -13,7 +13,9 @@
 #include <ranges>
 #include <algorithm>
 
+#include "fulla/core/assert.hpp"
 #include "fulla/bpt/concepts.hpp"
+#include "fulla/bpt/paged/settings.hpp"
 
 #include "fulla/page/header.hpp"
 #include "fulla/page/page_view.hpp"
@@ -25,6 +27,7 @@
 
 #include "fulla/storage/device.hpp"
 #include "fulla/storage/buffer_manager.hpp"
+
 
 namespace fulla::bpt::paged {
 
@@ -44,10 +47,10 @@ namespace fulla::bpt::paged {
         constexpr static const node_id_type invalid_node_value = std::numeric_limits<node_id_type>::max();
 
         constexpr static const std::size_t maximum_inode_slot_size = 200;
-        constexpr static const std::size_t minumum_inode_slot_size = 40;
+        constexpr static const std::size_t minumum_inode_slot_size = 5;
 
         constexpr static const std::size_t maximum_leaf_slot_size = 200;
-        constexpr static const std::size_t minumum_leaf_slot_size = 40;
+        constexpr static const std::size_t minumum_leaf_slot_size = 5;
 
         struct key_like_type {
             byte_view key;
@@ -195,6 +198,10 @@ namespace fulla::bpt::paged {
                 return page_;
             }
 
+            bool check_length(std::size_t len) const noexcept {
+                return (len >= minimum_len) && (len <= maximum_len);
+            }
+
             virtual byte_view extract_key(byte_view val) const = 0;
 
             page_view_type page_;
@@ -205,8 +212,12 @@ namespace fulla::bpt::paged {
         };
 
         struct leaf_type : public node_base {
-            leaf_type(page_view_type page, node_id_type self_id, typename buffer_manager_type::page_handle hdl)
-                : node_base(page, self_id, minumum_leaf_slot_size, maximum_leaf_slot_size, std::move(hdl))
+
+            leaf_type(page_view_type page, node_id_type self_id, 
+                typename buffer_manager_type::page_handle hdl, 
+                std::size_t min_slot_sz = minumum_leaf_slot_size,
+                std::size_t max_slot_sz = maximum_leaf_slot_size)
+                : node_base(page, self_id, min_slot_sz, max_slot_sz, std::move(hdl))
             {}
 
             leaf_type() = default;
@@ -236,8 +247,8 @@ namespace fulla::bpt::paged {
                 auto new_full_len = sizeof(page::bpt_leaf_slot) + k.key.size() + old_value.size();
 
                 if (slots.can_update(pos, new_full_len)) {
-                    if (new_full_len > maximum_leaf_slot_size) {
-                        assert(false && "something went wrong");
+                    if (!this->check_length(new_full_len)) {
+                        DB_ASSERT(false, "something went wrong");
                         return false;
                     }
                     byte_buffer new_value(new_full_len);
@@ -248,21 +259,21 @@ namespace fulla::bpt::paged {
                     std::memcpy(new_value.data() + slot_hdr->value_offset(), old_value.data(), old_value.size());
 
                     if (!slots.update(pos, { new_value })) {
-                        assert(false && "something went wrong");
+                        DB_ASSERT(false, "something went wrong");
                         return false;
                     }
 
                     return true;
                 }
-                assert(false && "something went wrong");
+                DB_ASSERT(false, "something went wrong");
                 return false; // ?
             }
 
             bool insert_value(std::size_t pos, key_like_type k, value_in_type v) const {
                 auto slots = this->get_slots();
                 auto new_full_len = sizeof(page::bpt_leaf_slot) + k.key.size() + v.val.size();
-                if (new_full_len > maximum_leaf_slot_size) {
-                    assert(false && "maximum_leaf_slot_size reached");
+                if (!this->check_length(new_full_len)) {
+                    DB_ASSERT(false, "maximum_leaf_slot_size reached");
                     return false;
                 }
 
@@ -274,7 +285,7 @@ namespace fulla::bpt::paged {
                     std::memcpy(data.data() + hdr->value_offset(), v.val.data(), v.val.size());
                     return true;
                 }
-                assert(false && "something went wrong");
+                DB_ASSERT(false, "something went wrong");
                 return false;
             }
 
@@ -284,8 +295,8 @@ namespace fulla::bpt::paged {
                 const auto old_value = leaf_value_extractor{}(old_data);
                 const auto old_key = leaf_key_extractor{}(old_data);
                 const auto new_size = sizeof(page::bpt_leaf_slot) + old_key.size() + v.val.size();
-                if (new_size > maximum_leaf_slot_size) {
-                    assert(false && "something went wrong");
+                if (!this->check_length(new_size)) {
+                    DB_ASSERT(false, "something went wrong");
                     return false;
                 }
                 if (slots.can_update(pos, new_size)) {
@@ -295,21 +306,21 @@ namespace fulla::bpt::paged {
                     std::memcpy(new_data.data() + new_hdr->key_offset(), old_key.data(), old_key.size());
                     std::memcpy(new_data.data() + new_hdr->value_offset(), v.val.data(), v.val.size());
                     if (!slots.update(pos, { new_data })) {
+                        DB_ASSERT(false, "something went wrong");
                         return false;
                     }
                     return true;
                 }
-                assert(false && "something went wrong");
+                DB_ASSERT(false, "something went wrong");
                 return false;
             }
 
             bool can_insert_value(std::size_t, key_like_type k, value_in_type v) {
                 const auto slots = this->get_slots();
                 const auto new_full_len = sizeof(page::bpt_leaf_slot) + k.key.size() + v.val.size();
-                if (new_full_len <= maximum_leaf_slot_size) {
-                    return slots.can_insert(new_full_len);
-                }
-                return false;
+                const bool size_ok = this->check_length(new_full_len);
+                DB_ASSERT(size_ok, "Something went wrong");
+                return slots.can_insert(new_full_len);
             }
 
             bool can_update_value(std::size_t pos, value_in_type v) {
@@ -317,10 +328,9 @@ namespace fulla::bpt::paged {
                 const auto old_value = slots.get_slot(pos);
                 auto k = leaf_key_extractor{}(old_value);
                 const auto new_full_len = sizeof(page::bpt_leaf_slot) + k.size() + v.val.size();
-                if (new_full_len <= maximum_leaf_slot_size) {
-                    return slots.can_update(pos, new_full_len);
-                }
-                return false;
+                const bool size_ok = this->check_length(new_full_len);
+                DB_ASSERT(size_ok, "Something went wrong");
+                return slots.can_update(pos, new_full_len);
             }
 
             value_out_type get_value(std::size_t pos) {
@@ -385,8 +395,11 @@ namespace fulla::bpt::paged {
         struct inode_type: public node_base {
             using node_id_type = node_id_type;
 
-            inode_type(page_view_type page, node_id_type self_id, typename buffer_manager_type::page_handle hdl)
-                : node_base(page, self_id, minumum_inode_slot_size, maximum_inode_slot_size, std::move(hdl)) 
+            inode_type(page_view_type page, node_id_type self_id, 
+                typename buffer_manager_type::page_handle hdl, 
+                std::size_t min_slot_sz = minumum_inode_slot_size, 
+                std::size_t max_slot_sz = maximum_inode_slot_size)
+                : node_base(page, self_id, min_slot_sz, max_slot_sz, std::move(hdl))
             {}
 
             inode_type() = default;
@@ -415,7 +428,7 @@ namespace fulla::bpt::paged {
                 const auto old_child_value = old_slot_hdr->child;
                 const auto new_len = sizeof(page::bpt_inode_slot) + k.key.size();
                 if (new_len > maximum_inode_slot_size) {
-                    assert(false && "something went wrong");
+                    DB_ASSERT(false, "something went wrong");
                     return false;
                 }
                 if (slots.update_reserve(pos, new_len)) {
@@ -425,7 +438,7 @@ namespace fulla::bpt::paged {
                     std::memcpy(new_value.data() + slot_hdr->key_offset(), k.key.data(), k.key.size());
                     return true;
                 }
-                assert(false && "something went wrong");
+                DB_ASSERT(false, "something went wrong");
                 return false; // ?
             }
 
@@ -451,7 +464,10 @@ namespace fulla::bpt::paged {
             bool can_insert_child(std::size_t, key_like_type k, node_id_type) const {
                 const auto slots = this->get_slots();
                 const auto full_slot_size = (k.key.size() + sizeof(page::bpt_inode_slot));
-                return (full_slot_size < minumum_inode_slot_size) && slots.can_insert(full_slot_size);
+
+                return (full_slot_size >= this->minimum_len) 
+                    && (full_slot_size <= this->maximum_len)
+                    && slots.can_insert(full_slot_size);
             }
 
             bool can_update_child(std::size_t, node_id_type) const noexcept {
@@ -503,14 +519,23 @@ namespace fulla::bpt::paged {
         static_assert(concepts::LeafNode<leaf_type, key_out_type, key_like_type, key_borrow_type, 
                 value_out_type, value_in_type, value_borrow_type>);
 
+        model(buffer_manager_type& mgr, settings sett)
+            : accessor_(mgr, std::move(sett))
+        {}
+
         model(buffer_manager_type& mgr)
-            : accessor_(mgr)
+            : model(mgr, {})
         {}
 
         struct accessor_type {
 
+            accessor_type(buffer_manager_type& mgr, settings sett)
+                : mgr_(mgr)
+                , sett_(std::move(sett))
+            {}
+
             accessor_type(buffer_manager_type& mgr)
-                : mgr_(mgr) 
+                : accessor_type(mgr, {})
             {}
 
             leaf_type create_leaf() {
@@ -526,7 +551,11 @@ namespace fulla::bpt::paged {
                     subhdr->next = invalid_node_value;
                     subhdr->prev = invalid_node_value;
 
-                    return { pv, page_id, std::move(new_page) };
+                    return { 
+                        pv, page_id, std::move(new_page), 
+                        sett_.leaf_minimum_slot_size, 
+                        sett_.leaf_maximum_slot_size 
+                    };
                 }
                 return {};
             }
@@ -541,7 +570,10 @@ namespace fulla::bpt::paged {
                     auto subhdr = pv.subheader<page::bpt_inode_header>();
                     subhdr->init();
                     subhdr->parent = invalid_node_value;
-                    return { pv, page_id, std::move(new_page) };
+                    return { pv, page_id, std::move(new_page), 
+                        sett_.inode_minimum_slot_size, 
+                        sett_.inode_maximum_slot_size 
+                    };
                 }
                 return { };
             }
@@ -557,7 +589,11 @@ namespace fulla::bpt::paged {
                     auto data = new_page.rw_span();
                     auto pv = page_view_type{ data };
                     if (pv.header().kind == static_cast<std::uint16_t>(page::page_kind::bpt_leaf)) {
-                        return leaf_type{ pv, page_id, std::move(new_page) };
+                        return leaf_type{ pv, page_id, 
+                            std::move(new_page),
+                            sett_.leaf_minimum_slot_size,
+                            sett_.leaf_maximum_slot_size,
+                        };
                     }
                 }
                 return {};
@@ -570,7 +606,11 @@ namespace fulla::bpt::paged {
                     auto data = new_page.rw_span();
                     auto pv = page_view_type{ data };
                     if (pv.header().kind == static_cast<std::uint16_t>(page::page_kind::bpt_inode)) {
-                        return inode_type{ pv, page_id, std::move(new_page) };
+                        return inode_type{ pv, page_id, 
+                            std::move(new_page),
+                            sett_.inode_minimum_slot_size,
+                            sett_.inode_maximum_slot_size
+                        };
                     }
                 }
                 return {};
@@ -606,6 +646,7 @@ namespace fulla::bpt::paged {
 
             std::optional<node_id_type> root_ {};
             buffer_manager_type &mgr_;
+            settings sett_{};
         };
 
         static_assert(concepts::NodeAccessor<accessor_type, node_id_type, inode_type, leaf_type>);
@@ -660,12 +701,20 @@ namespace fulla::bpt::paged {
             //return std::to_string(vout.val.size());
         }
 
-        accessor_type &get_accessor() {
+        accessor_type &get_accessor() noexcept {
             return accessor_;
         }
         
-        const accessor_type &get_accessor() const {
+        const accessor_type &get_accessor() const noexcept {
             return accessor_;
+        }
+
+        settings& get_settings() noexcept {
+            return get_accessor().sett_;
+        }
+
+        const settings& get_settings() const noexcept {
+            return get_accessor().sett_;
         }
 
     private:

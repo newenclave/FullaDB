@@ -120,7 +120,7 @@ TEST_SUITE("bpt/page/model/inode") {
 		auto page = make_leaf_page(4096);
 		auto pv = page_view_type{ page };
 		[[maybe_unused]] auto sh = pv.subheader<fulla::page::bpt_leaf_header>();
-		model_type::leaf_type leaf(pv, 100, {});
+		model_type::leaf_type leaf(pv, 100, {}, 5, 1000);
 		
 		CHECK(leaf.can_insert_value(0, key_like_type{ short_key1.view() }, as_value_in(value)));
 		CHECK(leaf.insert_value(0, key_like_type{ short_key1.view() }, as_value_in(value)));
@@ -189,7 +189,7 @@ TEST_SUITE("bpt/page/model/inode") {
 		auto pv = page_view_type{ page };
 		auto slots = pv.get_slots_dir();
 		std::map<std::string, std::string> tests;
-		model_type::leaf_type leaf(pv, 100, {});
+		model_type::leaf_type leaf(pv, 100, {}, 5, 200);
 
 		static std::random_device rd;
 		static std::mt19937 gen(rd());
