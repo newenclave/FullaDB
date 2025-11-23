@@ -103,8 +103,8 @@ TEST_SUITE("bpt/paged/model bpt") {
 
 		auto path = temp_file("test_page_model");
 		{
-
-			constexpr static const auto small_buffer_size = DEFAULT_BUFFER_SIZE / 4;
+			constexpr static const auto small_buffer_size = DEFAULT_BUFFER_SIZE * 4;
+			constexpr static const auto element_mximum = 50'000;
 
 			file_device dev(path, small_buffer_size);
 			using BM = buffer_manager<file_device>;
@@ -115,13 +115,17 @@ TEST_SUITE("bpt/paged/model bpt") {
 			SUBCASE("create tree") {
 				bpt_type bpt(bm);
 				std::map<std::string, std::string> test;
-				for (unsigned int i = 0; i < 20000; ++i) {
+
+				std::cout << "File: " << path.string() << "\n";
+
+				for (unsigned int i = 0; i < element_mximum; ++i) {
 					auto ts = get_random_string(10, 5);
 					auto key = prop::make_record(prop::str{ts});
 					if (!test.contains(ts)) {
 						test[ts] = ts;
 						CHECK(bm.has_free_frames());
-						REQUIRE(bpt.insert(key_like_type{ key.view() }, as_value_in(ts), policies::insert::insert, policies::rebalance::neighbor_share));
+						REQUIRE(bpt.insert(key_like_type{ key.view() }, as_value_in(ts), 
+							policies::insert::insert, policies::rebalance::neighbor_share));
 					}
 					else {
 						std::cout << "";
@@ -177,12 +181,8 @@ TEST_SUITE("bpt/paged/model bpt") {
 				check_map();
 
 				//bpt.dump();
-
 			}
-
 		}
-
-		//CHECK(std::filesystem::remove(path));
-
+		CHECK(std::filesystem::remove(path));
 	}
 }

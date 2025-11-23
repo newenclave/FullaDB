@@ -214,6 +214,7 @@ namespace fulla::page::slots {
                     return false;
                 }
             }
+            len = fixed_len(len);
             const auto slot_overhead = sizeof(slot_type);
             if ((available() >= slot_overhead) && (find_free_slot(len) != nullptr)) {
                 return true;

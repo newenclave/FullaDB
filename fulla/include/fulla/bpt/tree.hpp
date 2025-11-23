@@ -747,22 +747,28 @@ namespace fulla::bpt {
 
             if (left.size() > (min_elements + additional_elements)) {
 
-                auto borrowed_key = left.borrow_key(left.size() - 1);
-                auto borrowed_val = left.borrow_value(left.size() - 1);
-                auto key = model_.key_borrow_as_like(borrowed_key);
-                auto value = model_.value_borrow_as_in(borrowed_val);
-
-                node.insert_value(0, key, value);
-
-                const auto last_key = left.size() - 1;
-                left.erase(last_key);
-
+                const auto key_to_check = left.get_key(left.size() - 1);
                 auto parent = get_accessor().load_inode(node.get_parent());
                 auto pos = find_child_index_in_parent(parent, node.self());
-                // TODO: check for overflow here
-                parent.update_key(pos - 1, model_.key_out_as_like(node.get_key(0)));
 
-                return true;
+                // TODO: check if it's possible to split the parent here.
+                if (parent.can_update_key(pos - 1, model_.key_out_as_like(key_to_check))) {
+                 
+                    auto borrowed_key = left.borrow_key(left.size() - 1);
+                    auto borrowed_val = left.borrow_value(left.size() - 1);
+                    auto key = model_.key_borrow_as_like(borrowed_key);
+                    auto value = model_.value_borrow_as_in(borrowed_val);
+
+                    node.insert_value(0, key, value);
+
+                    const auto last_key = left.size() - 1;
+                    left.erase(last_key);
+
+                    // TODO: check for overflow here
+                    // TODO: check if its possible to reuse 'key' here 
+                    parent.update_key(pos - 1, model_.key_out_as_like(node.get_key(0)));
+                    return true;
+                }
             }
             return false;
         }
@@ -782,22 +788,25 @@ namespace fulla::bpt {
 
             if (right.size() > (min_elements + additional_elements)) {
 
-                auto borrowed_key = right.borrow_key(0);
-                auto borrowed_value = right.borrow_value(0);
-
-                auto key = model_.key_borrow_as_like(borrowed_key);
-                auto value = model_.value_borrow_as_in(borrowed_value);
-
-                node.insert_value(node.size(), std::move(key), std::move(value));
-
-                right.erase(0);
-
+                auto right_second_key = right.get_key(1);
                 auto parent = get_accessor().load_inode(node.get_parent());
                 auto pos = find_child_index_in_parent(parent, node.self());
-                // TODO: check for overflow here
-                parent.update_key(pos, model_.key_out_as_like(right.get_key(0)));
 
-                return true;
+                // TODO: check if it's possible to split the parent here.
+                if (parent.can_update_key(pos, model_.key_out_as_like(right_second_key))) {
+                    auto borrowed_key = right.borrow_key(0);
+                    auto borrowed_value = right.borrow_value(0);
+
+                    auto key = model_.key_borrow_as_like(borrowed_key);
+                    auto value = model_.value_borrow_as_in(borrowed_value);
+
+                    node.insert_value(node.size(), std::move(key), std::move(value));
+
+                    right.erase(0);
+                    // TODO: check for overflow here
+                    parent.update_key(pos, model_.key_out_as_like(right.get_key(0)));
+                    return true;
+                }
             }
             return false;
         }
