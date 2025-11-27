@@ -14,18 +14,18 @@
 
 namespace fulla::storage {
 
-    using position_type = std::uint64_t;
-
     // A generic random-access device for page/file IO.
     template <class D>
     concept RandomAccessDevice = requires(
         D dev,
-        position_type off,
+        typename D::position_type off,
         fulla::core::byte* dst,
         const fulla::core::byte* src,
         std::size_t n
     ) {
         typename D::offset_type;
+        typename D::position_type;
+
         { dev.block_size() } -> std::convertible_to<std::size_t>;
         { dev.is_open() }    -> std::convertible_to<bool>;
 
@@ -33,9 +33,9 @@ namespace fulla::storage {
         { dev.read_at_offset(off, dst, n) }  -> std::same_as<bool>;
         { dev.write_at_offset(off, src, n) } -> std::same_as<bool>;
 
-        { dev.append(src, n) }   -> std::convertible_to<position_type>;
-        { dev.allocate_block() } -> std::convertible_to<position_type>;
-        { dev.get_file_size() }  -> std::convertible_to<position_type>;
+        { dev.append(src, n) }   -> std::convertible_to<typename D::position_type>;
+        { dev.allocate_block() } -> std::convertible_to<typename D::position_type>;
+        { dev.get_file_size() }  -> std::convertible_to<typename D::position_type>;
     };
 
 } // namespace fulla::storage

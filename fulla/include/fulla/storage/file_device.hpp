@@ -19,8 +19,8 @@ namespace fulla::storage {
 // Simple file-backed random-access device (not thread-safe).
 class file_device {
 public:
-    using position_type = storage::position_type;
-    using offset_type = storage::position_type;
+    using position_type = std::uint64_t;
+    using offset_type = position_type;
 
     file_device() = default;
 

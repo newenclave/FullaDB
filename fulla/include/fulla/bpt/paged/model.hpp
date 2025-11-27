@@ -34,24 +34,7 @@ namespace fulla::bpt::paged {
     using core::byte_view;
     using core::byte_buffer;
 
-    template <storage::RandomAccessDevice DeviceT, typename PidT = std::uint32_t>
-    struct model {
-
-        using buffer_manager_type = storage::buffer_manager<DeviceT, PidT>;
-        using slot_directory_type = page::slots::variadic_directory_view<>;
-        using page_view_type = page::page_view<slot_directory_type>;
-
-        using less_type = page::record_less;
-
-        using node_id_type = PidT;
-        constexpr static const node_id_type invalid_node_value = std::numeric_limits<node_id_type>::max();
-
-        constexpr static const std::size_t maximum_inode_slot_size = 200;
-        constexpr static const std::size_t minumum_inode_slot_size = 5;
-
-        constexpr static const std::size_t maximum_leaf_slot_size = 200;
-        constexpr static const std::size_t minumum_leaf_slot_size = 5;
-
+    namespace model_common {
         struct key_like_type {
             byte_view key;
         };
@@ -75,6 +58,37 @@ namespace fulla::bpt::paged {
         struct value_borrow_type {
             byte_buffer val;
         };
+
+        using slot_directory_type = page::slots::variadic_directory_view<>;
+        using page_view_type = page::page_view<slot_directory_type>;
+    }
+
+    template <storage::RandomAccessDevice DeviceT, 
+        typename PidT = std::uint32_t, 
+        typename KeyLessT = page::record_less>
+    struct model {
+
+        using buffer_manager_type = storage::buffer_manager<DeviceT, PidT>;
+        using slot_directory_type = model_common::slot_directory_type;
+        using page_view_type = model_common::page_view_type;
+
+        using less_type = KeyLessT;
+
+        using node_id_type = PidT;
+        constexpr static const node_id_type invalid_node_value = std::numeric_limits<node_id_type>::max();
+
+        constexpr static const std::size_t maximum_inode_slot_size = 200;
+        constexpr static const std::size_t minumum_inode_slot_size = 5;
+
+        constexpr static const std::size_t maximum_leaf_slot_size = 200;
+        constexpr static const std::size_t minumum_leaf_slot_size = 5;
+
+        using key_like_type = model_common::key_like_type;
+        using key_out_type = model_common::key_out_type;
+        using key_borrow_type = model_common::key_borrow_type;
+        using value_in_type = model_common::value_in_type;
+        using value_out_type = model_common::value_out_type;
+        using value_borrow_type = model_common::value_borrow_type;
 
         struct inode_key_extractor {
             byte_view operator ()(byte_view value) const noexcept {
@@ -106,7 +120,7 @@ namespace fulla::bpt::paged {
         }
 
         inline static auto make_key_less() {
-            return page::make_record_less();
+            return less_type{};
         }
 
         struct node_base {
@@ -501,12 +515,13 @@ namespace fulla::bpt::paged {
         private:
             auto get_child_ptr(std::size_t pos) const -> decltype(page::bpt_inode_slot::child) * {
                 auto slots = this->get_slots();
-                if (pos < slots.size()) {
+                const auto slot_size = slots.size();
+                if (pos < slot_size) {
                     auto value = slots.get_slot(pos);
                     auto slot_hdr = reinterpret_cast<page::bpt_inode_slot*>(value.data());
                     return &slot_hdr->child;
                 }
-                else if(pos == slots.size()) {
+                else if(pos == slot_size) {
                     auto pv = this->get_page();
                     auto sub_hdr = pv.subheader<page::bpt_inode_header>();
                     return &sub_hdr->rightmost_child;
