@@ -19,7 +19,10 @@ namespace fulla::storage {
 // Simple file-backed random-access device (not thread-safe).
 class file_device {
 public:
-    using position_type = storage::position_type;
+    using position_type = std::uint64_t;
+    using offset_type = position_type;
+
+    file_device() = default;
 
     explicit file_device(const std::filesystem::path& filename,
                          std::size_t block_size = 4096)
@@ -47,6 +50,7 @@ public:
         if (!is_open()) {
             return false;
         }
+        file_.clear();
         file_.seekp(static_cast<std::streamoff>(offset), std::ios::beg);
         if (!file_) {
             return false;
@@ -66,6 +70,7 @@ public:
         if (!is_open()) {
             return false;
         }
+        file_.clear();
         file_.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
         if (!file_) {
             return false;

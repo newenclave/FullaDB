@@ -8,16 +8,17 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON) 
 
 file(GLOB_RECURSE FULLA_HEADERS
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/fulla/include/*.hpp"
 )
 
 add_library(fulladb INTERFACE ${FULLA_HEADERS})
+
 target_include_directories(fulladb
-    INTERFACE
-        ${CMAKE_CURRENT_SOURCE_DIR}/fulla/include
+    INTERFACE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/fulla/include
 )
 
-source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/include"
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/fulla/include
              PREFIX "include"
              FILES ${FULLA_HEADERS})
 
@@ -43,9 +44,16 @@ if (FULLADB_BUILD_TESTS)
         tests/test_buffer_manager.cpp
         tests/test_bpt_memory.cpp
         tests/test_slot_directory.cpp
+        tests/test_page_bpt_header.cpp
+        tests/test_bpt_inode_model.cpp
+        tests/test_bpt_leaf_model.cpp
+        tests/test_bpt_page_allocator.cpp
+        tests/test_bpt_page_model.cpp
     )
-    target_link_libraries(tests PRIVATE fulladb)
-
+    
+    target_link_libraries(tests PRIVATE fulladb)    
+    target_include_directories(tests PRIVATE ${FULLA_HEADERS})
+    
     include(CTest)
     enable_testing()
     add_test(NAME fulladb_tests COMMAND tests)

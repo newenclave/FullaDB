@@ -47,8 +47,11 @@ namespace fulla::codec {
 				return lhs_type <=> rhs_type;
 			}
 
-			const auto left_data = lhs.subspan(sizeof(serialized_data_header), get_size(lhs) - sizeof(serialized_data_header));
-			const auto right_data = rhs.subspan(sizeof(serialized_data_header), get_size(rhs) - sizeof(serialized_data_header));
+			const auto lsize = get_size(lhs);
+			const auto rsize = get_size(rhs);
+
+			const auto left_data = lhs.subspan(sizeof(serialized_data_header), lsize - sizeof(serialized_data_header));
+			const auto right_data = rhs.subspan(sizeof(serialized_data_header), rsize - sizeof(serialized_data_header));
 
 			switch (lhs_type) {
 			case data_type::string:
@@ -73,86 +76,86 @@ namespace fulla::codec {
 			return std::partial_ordering::unordered;
 		}
 
-		static std::ostream& debug_print(std::ostream &os, byte_view data, int indent = 0) {
+		static std::ostream& debug_print(std::ostream &os, byte_view data, const std::string& newline = "\n", int indent = 0) {
 
 			const auto dtype = get_type(data);
 			const auto ldata = data.subspan(sizeof(serialized_data_header), get_size(data) - sizeof(serialized_data_header));
 
-			debug_dump_field(os, dtype, ldata, indent);
+			debug_dump_field(os, dtype, ldata, indent, newline);
 			return os;
 		}
 
 	//private:
 
-		static void debug_dump_field(std::ostream& os, data_type t, byte_view payload, int indent) {
+		static void debug_dump_field(std::ostream& os, data_type t, byte_view payload, int indent, const std::string &newline = "\n") {
 			auto pad = std::string(indent, ' ');
 
 			switch (t) {
 			case data_type::i32: {
 				auto [v, sz] = serializer<std::int32_t>::load(payload.data(), payload.size());
-				os << pad << "i32: " << v << "\n";
+				os << pad << "i32: " << v << newline;
 				break;
 			}
 			case data_type::i64: {
 				auto [v, sz] = serializer<std::int64_t>::load(payload.data(), payload.size());
-				os << pad << "i64: " << v << "\n";
+				os << pad << "i64: " << v << newline;
 				break;
 			}
 			case data_type::ui32: {
 				auto [v, sz] = serializer<std::uint32_t>::load(payload.data(), payload.size());
-				os << pad << "ui32: " << v << "\n";
+				os << pad << "ui32: " << v << newline;
 				break;
 			}
 			case data_type::ui64: {
 				auto [v, sz] = serializer<std::uint64_t>::load(payload.data(), payload.size());
-				os << pad << "ui64: " << v << "\n";
+				os << pad << "ui64: " << v << newline;
 				break;
 			}
 			case data_type::fp32: {
 				auto [v, sz] = serializer<float>::load(payload.data(), payload.size());
-				os << pad << "fp32: " << v << "\n";
+				os << pad << "fp32: " << v << newline;
 				break;
 			}
 			case data_type::fp64: {
 				auto [v, sz] = serializer<double>::load(payload.data(), payload.size());
-				os << pad << "fp64: " << v << "\n";
+				os << pad << "fp64: " << v << newline;
 				break;
 			}
 			case data_type::string: {
 				auto [s, sz] = serializer<std::string>::load(payload.data(), payload.size());
-				os << pad << "string: \"" << s << "\"\n";
+				os << pad << "string: \"" << s << "\"" << newline;
 				break;
 			}
 			case data_type::blob: {
 				auto [s, sz] = serializer<byte_view>::load(payload.data(), payload.size());
-				os << pad << "blob: " << std::format("[len:{}]", s.size()) << "\n";
+				os << pad << "blob: " << std::format("[len:{}]", s.size()) << newline;
 				break;
 			}
 			case data_type::tuple: {
-				os << pad << "tuple:\n";
+				os << pad << "tuple:" << newline;
 				debug_dump_tuple(os, payload, indent + 2);
 				break;
 			}
 			default:
 				os << pad << "type=" << static_cast<unsigned>(t)
-					<< " payload_len=" << payload.size() << "\n";
+					<< " payload_len=" << payload.size() << newline;
 				break;
 			}
 		}
 
-		static std::ostream& debug_dump_tuple(std::ostream& os, byte_view tuple_rec, int indent = 0)
+		static std::ostream& debug_dump_tuple(std::ostream& os, byte_view tuple_rec, int indent, const std::string& newline = "\n")
 		{
 			bool ok = for_each_in_tuple(tuple_rec,
 				[&](std::size_t idx, data_type t, byte_view full, byte_view payload) -> bool {
 					auto pad = std::string(indent, ' ');
 					os << pad << "[" << idx << "] "
 						<< "full_size=" << full.size()
-						<< " payload=" << payload.size() << "\n";
+						<< " payload=" << payload.size() << newline;
 					debug_dump_field(os, t, payload, indent + 2);
 					return true; // continue
 				});
 			if (!ok) {
-				os << std::string(indent, ' ') << "<corrupted tuple>\n";
+				os << std::string(indent, ' ') << "<corrupted tuple>" << newline;
 			}
 			return os;
 		}

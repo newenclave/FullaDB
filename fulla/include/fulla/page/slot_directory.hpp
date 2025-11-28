@@ -24,11 +24,17 @@ namespace fulla::page::slots {
     constexpr static const auto SLOT_FREE = SLOT_INVALID;
 
     template <typename SdT>
-    concept SlotDirectoryConcept = requires(SdT sdt, std::size_t pos, byte_view bv) {
+    concept SlotDirectoryConcept = requires(SdT sdt, std::size_t pos, byte_view bv, std::size_t len) {
         typename SdT::slot_type;
         typename SdT::directory_header;
 
         { sdt.size() } -> std::convertible_to<std::size_t>;
+        { sdt.capacity_for(std::size_t{}) } -> std::convertible_to<std::size_t>;
+        { sdt.minumum_slot_size() } -> std::convertible_to<std::size_t>;
+        { sdt.maximum_slot_size() } -> std::convertible_to<std::size_t>;
+
+        { sdt.reserve_get(pos, len) } -> std::convertible_to<byte_span>;
+        { sdt.update_get(pos, len) } -> std::convertible_to<byte_span>;
 
         { sdt.insert(pos, bv) } -> std::convertible_to<bool>;
         { sdt.update(pos, bv) } -> std::convertible_to<bool>;
@@ -116,7 +122,7 @@ namespace fulla::page::slots {
         using cslot_span = std::span<const slot_type>;
 
         directory_view(std::span<byte> data) : body_(data) {
-            auto* p = body_.data();
+            [[maybe_unused]] auto* p = body_.data();
             assert((reinterpret_cast<std::uintptr_t>(p) % alignof(directory_header)) == 0);
         }
 
@@ -146,6 +152,31 @@ namespace fulla::page::slots {
             }
         }
 
+        std::size_t capacity_for(std::size_t slot_size) const noexcept {
+            const auto fixed_size = fixed_len(slot_size);
+            const std::size_t max_available = static_cast<std::size_t>(base_end() - base_begin());
+            return max_available / (fixed_size + sizeof(slot_type));
+        }
+        
+        std::size_t minumum_slot_size() const noexcept {
+            if constexpr (is_fixed) {
+                return header().size;
+            }
+            else {
+                return fix_slot_len(sizeof(free_slot_type));
+            }
+        }
+
+        std::size_t maximum_slot_size() const noexcept {
+            if constexpr (is_fixed) {
+                return header().size;
+            }
+            else {
+                const std::size_t max_available = static_cast<std::size_t>(base_end() - base_begin());
+                return max_available - sizeof(slot_type);
+            }
+        }
+
         word16_type available_after_compact() const {
             const std::size_t max_available = static_cast<std::size_t>(base_end() - base_begin());
             const std::size_t total_size =
@@ -160,12 +191,7 @@ namespace fulla::page::slots {
         }
 
         word16_type maximum_available_slots() const {
-            if constexpr (is_fixed) {
-                return available() / (header().size + sizeof(slot_type));
-            }
-            else {
-                return available() / fix_slot_len(sizeof(free_slot_type));
-            }
+            return available() / (minumum_slot_size() + sizeof(slot_type));
         }
 
         word16_type stored_size() const {
@@ -188,6 +214,7 @@ namespace fulla::page::slots {
                     return false;
                 }
             }
+            len = fixed_len(len);
             const auto slot_overhead = sizeof(slot_type);
             if ((available() >= slot_overhead) && (find_free_slot(len) != nullptr)) {
                 return true;
@@ -195,8 +222,8 @@ namespace fulla::page::slots {
             if (available_for(len, true)) {
                 return true;
             }
-            const auto after_compact = available_after_compact() - slot_overhead;
-            return after_compact >= len;
+            const auto after_compact = available_after_compact();
+            return after_compact >= (len + slot_overhead);
         }
 
         bool insert(std::size_t pos, byte_view data) {
@@ -219,10 +246,43 @@ namespace fulla::page::slots {
                     std::memcpy(mem.data(), data.data(), data.size());
                     slots[pos].len = static_cast<word16_type>(data.size());
                     slots[pos].off = offset_of(mem.data());
+                    check_valid();
                     return true;
                 }
             }
             return false;
+        }
+
+        bool reserve(std::size_t pos, std::size_t len) {
+            return (reserve_get(pos, len).size() == len);
+        }
+
+        byte_span reserve_get(std::size_t pos, std::size_t len) {
+            byte_span mem;
+            if (available() >= sizeof(slot_type)) {
+                if (auto fs = pop_free_slot(len)) {
+                    mem = free_slot_to_span(fs);
+                }
+                else if (available_for(len)) {
+                    mem = allocate_space(len);
+                }
+            }
+            if (mem.empty()) {
+                if (available_after_compact() >= (sizeof(slot_type) + fixed_len(len))) {
+                    if (compact()) {
+                        mem = allocate_space(len);
+                    }
+                }
+            }
+            if (!mem.empty()) {
+                auto slots = allocate_slot();
+                expand_at(pos);
+                slots[pos].len = static_cast<word16_type>(len);
+                slots[pos].off = offset_of(mem.data());
+                check_valid();
+                return { mem.data(), len };
+            }
+            return {};
         }
 
         bool can_update(std::size_t pos, std::size_t new_len) const {
@@ -248,7 +308,7 @@ namespace fulla::page::slots {
                 if (available() >= new_cap) {
                     return true;
                 }
-                auto size_after_compact = static_cast<std::size_t>(available_after_compact()) + cur_cap;
+                const auto size_after_compact = static_cast<std::size_t>(available_after_compact()) + cur_cap;
                 if (size_after_compact >= new_cap) {
                     return true;
                 }
@@ -256,47 +316,57 @@ namespace fulla::page::slots {
             return false;
         }
 
-        bool update(std::size_t pos, byte_view data) {
+        bool update_reserve(std::size_t pos, std::size_t len) {
+            return (update_get(pos, len).size() == len);
+        }
+
+        byte_span update_get(std::size_t pos, std::size_t len) {
             auto all_slots = span();
             if (pos >= all_slots.size()) {
-                return false;
+                return {};
             }
 
             if constexpr (is_fixed) {
-                if (data.size() > header().size) {
-                    return false;
+                if (len > header().size) {
+                    return {};
                 }
                 auto mem = get_slot(all_slots[pos]);
-                std::memcpy(mem.data(), data.data(), data.size());
-                all_slots[pos].len = static_cast<word16_type>(data.size());
-                return true;
+                all_slots[pos].len = static_cast<word16_type>(len);
+                check_valid();
+                return { mem.data(), len };
             }
             else {
                 auto& s = all_slots[pos];
                 const auto cur_cap = fix_slot_len(s.len);
-                const auto new_cap = fix_slot_len(data.size());
+                const auto new_cap = fix_slot_len(len);
 
                 // 1) fits into current allocated block (including padding)
-                if (data.size() <= cur_cap) {
+                if (len <= cur_cap) {
                     auto mem = get_slot(s);
-                    std::memcpy(mem.data(), data.data(), data.size());
-                    s.len = static_cast<word16_type>(data.size());
-                    return true;
+                    s.len = static_cast<word16_type>(len);
+                    if constexpr (!is_fixed) {
+                        if ((cur_cap - new_cap) > minumum_slot_size()) {
+                            auto fs = reinterpret_cast<free_slot_type*>(mem.data() + new_cap);
+                            push_free_slot(fs, cur_cap - new_cap);
+                        }
+                    }
+                    check_valid();
+                    return { mem.data(), len };
                 }
 
                 // 2) try allocate a new place without compact
                 {
-                    auto new_mem = allocate_space(data.size());
+                    auto new_mem = allocate_space(len);
                     if (!new_mem.empty()) {
                         // free the old block
                         auto old_mem = get_slot(s);
                         auto fs = reinterpret_cast<free_slot_type*>(old_mem.data());
                         push_free_slot(fs, old_mem.size());
 
-                        std::memcpy(new_mem.data(), data.data(), data.size());
-                        s.len = static_cast<word16_type>(data.size());
+                        s.len = static_cast<word16_type>(len);
                         s.off = offset_of(new_mem.data());
-                        return true;
+                        check_valid();
+                        return { new_mem.data(), len };
                     }
                 }
 
@@ -306,17 +376,27 @@ namespace fulla::page::slots {
                 if (size_after_compact >= new_cap) {
                     s.off = SLOT_INVALID;
                     if (compact()) {
-                        auto new_mem = allocate_space(data.size());
+                        auto new_mem = allocate_space(len);
                         if (!new_mem.empty()) {
-                            std::memcpy(new_mem.data(), data.data(), data.size());
-                            s.len = static_cast<word16_type>(data.size());
+                            s.len = static_cast<word16_type>(len);
                             s.off = offset_of(new_mem.data());
-                            return true;
+                            check_valid();
+                            return { new_mem.data(), len };
                         }
                     }
                 }
-                return false;
+                return {};
             }
+        }
+
+        bool update(std::size_t pos, byte_view data) {
+            auto new_place = update_get(pos, data.size());
+            if (new_place.size() >= data.size()) {
+                std::memcpy(new_place.data(), data.data(), data.size());
+                check_valid();
+                return true;
+            }
+            return false;
         }
 
         bool erase(std::size_t pos) {
@@ -324,10 +404,11 @@ namespace fulla::page::slots {
             if (!mem.empty()) {
                 auto fs = reinterpret_cast<free_slot_type*>(mem.data());
                 shrink_at(pos);
-                push_free_slot(fs, mem.size());
                 if constexpr (!is_fixed) {
                     header().slots = static_cast<word16_type>(header().slots) - 1;
                 }
+                push_free_slot(fs, mem.size());
+                check_valid();
                 return true;
             }
             return false;
@@ -343,7 +424,7 @@ namespace fulla::page::slots {
             std::size_t count = 0;
             if (all.size() <= external.size()) {
                 for (auto &a: all) {
-                    if ((a.off != SLOT_INVALID) && (a.len > 0)) {
+                    if (a.off != SLOT_INVALID) {
                         external[count++] = &a;
                     }
                 }
@@ -361,12 +442,21 @@ namespace fulla::page::slots {
                 }
                 header().free_end = end;
                 header().freed = 0;
+                check_valid();
                 return true;
             }
             return false;
         }
 
         byte_span get_slot(std::size_t pos) {
+            auto slots = view();
+            if (pos < slots.size()) {
+                return get_slot(slots[pos]);
+            }
+            return {};
+        }
+
+        byte_view get_slot(std::size_t pos) const {
             auto slots = view();
             if (pos < slots.size()) {
                 return get_slot(slots[pos]);
@@ -401,7 +491,7 @@ namespace fulla::page::slots {
                 const std::uint16_t off = dir[i].off;
                 const std::uint16_t len = dir[i].len;
 
-                if ((off == SLOT_FREE) && (len == 0)) {
+                if ((off == SLOT_FREE) || (len == 0)) {
                     continue;
                 }
                 if (off < h.free_end) {
@@ -430,6 +520,17 @@ namespace fulla::page::slots {
         }
 
     private:
+
+        void check_valid([[maybe_unused]] bool val = true) {
+            //const auto fe = header().free_end;
+            //const auto fb = header().free_beg;
+            //if (val && !validate()) {
+            //    std::cout << "";
+            //}
+            //if (!val && fe < fb) {
+            //    std::cout << "";
+            //}
+        }
 
         bool validate_slot(slot_type s) const {
             const auto& h = header();
@@ -473,12 +574,15 @@ namespace fulla::page::slots {
                 fs->len = fix_slot_len(len);
             }
             header().freed = offset_of(fs);
+            check_valid();
         }
 
         bool available_for(std::size_t len, bool need_slot = true) const {
             const auto slot_overhead = need_slot ? sizeof(slot_type) : 0;
             if constexpr (!is_fixed) {
-                return available() >= (fix_slot_len(len) + slot_overhead);
+                const auto ava = available();
+                const auto fsl = fix_slot_len(len);
+                return ava >= (fsl + slot_overhead);
             }
             else {
                 auto& h = header();
@@ -539,6 +643,7 @@ namespace fulla::page::slots {
                 all_slots[i - 1] = std::move(all_slots[i]);
             }
             header().free_beg = header().free_beg - sizeof(slot_type);
+            check_valid(false);
         }
 
         void expand_at(std::size_t pos) {
@@ -546,6 +651,7 @@ namespace fulla::page::slots {
             for (std::size_t i = all_slots.size() - 1; i > pos; --i) {
                 all_slots[i] = std::move(all_slots[i - 1]);
             }
+            check_valid(false);
         }
 
         slot_span allocate_slot() {
@@ -553,6 +659,7 @@ namespace fulla::page::slots {
                 header().slots = static_cast<word16_type>(header().slots) + 1;
             }
             header().free_beg = static_cast<word16_type>(header().free_beg) + sizeof(slot_type);
+            check_valid(false);
             return span();
         }
 
@@ -583,6 +690,7 @@ namespace fulla::page::slots {
                     }
                 }
             }
+            check_valid();
         }
 
         free_slot_ptr find_free_slot(std::size_t len) const {
@@ -612,6 +720,7 @@ namespace fulla::page::slots {
                 else {
                     remove_free_slot(fs);
                 }
+                check_valid();
                 return fs;
             }
             return nullptr;
@@ -629,19 +738,23 @@ namespace fulla::page::slots {
         byte_span allocate_space(std::size_t len) {
             if constexpr (is_fixed) {
                 if (header().size < len) {
+                    check_valid();
                     return {};
                 }
             }
             auto fix_len = fix_slot_len(len);
             if (auto fs = pop_free_slot(fix_len)) {
+                check_valid();
                 return free_slot_to_span(fs);
             }
             else {
                 if (available() >= fix_len) {
                     header().free_end = static_cast<word16_type>(header().free_end) - static_cast<word16_type>(fix_len);
+                    check_valid();
                     return { body_.data() + header().free_end, fix_len };
                 }
             }
+            check_valid();
             return {};
         }
 
@@ -666,10 +779,10 @@ namespace fulla::page::slots {
 
 
     template <std::size_t AlignV = 4>
-    using fixed_directory_view = directory_view<directory_type::fixed>;
+    using fixed_directory_view = directory_view<directory_type::fixed, AlignV>;
 
     template <std::size_t AlignV = 4>
-    using variadic_directory_view = directory_view<directory_type::variadic>;
+    using variadic_directory_view = directory_view<directory_type::variadic, AlignV>;
 
     static_assert(SlotDirectoryConcept<fixed_directory_view<>>);
     static_assert(SlotDirectoryConcept<variadic_directory_view<>>);

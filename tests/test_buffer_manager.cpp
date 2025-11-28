@@ -9,6 +9,7 @@
 
 #include <filesystem>
 #include <vector>
+
 using namespace fulla::core;
 using namespace fulla::storage;
 using namespace fulla::page;
@@ -32,12 +33,11 @@ TEST_SUITE("storage/buffer_manager") {
             using BM = buffer_manager<file_device>;
             std::vector<typename BM::frame> frames(2);
 
-            BM bm(dev, byte_span{arena.data(), arena.size()},
-                  std::span{frames.data(), frames.size()});
+            BM bm(dev, 2);
 
             // create a page and write header
             auto ph = bm.create();
-            CHECK(ph);
+            CHECK(ph.is_valid());
             {
                 auto pg = ph.rw_span();
                 auto* hdr = reinterpret_cast<page_header*>(pg.data());
@@ -46,11 +46,11 @@ TEST_SUITE("storage/buffer_manager") {
             ph.reset(); // unpin
 
             // flush all
-            bm.flush_all(true);
+            bm.flush_all();
 
             // fetch back page 0
             auto fh = bm.fetch(0);
-            CHECK(fh);
+            CHECK(fh.is_valid());
             {
                 auto pg = fh.ro_span();
                 auto* hdr = reinterpret_cast<const page_header*>(pg.data());
@@ -70,17 +70,16 @@ TEST_SUITE("storage/buffer_manager") {
             std::vector<byte> arena(1024 * 2);
             using BM = buffer_manager<file_device>;
             std::vector<typename BM::frame> frames(2);
-            BM bm(dev, byte_span{arena.data(), arena.size()},
-                  std::span{frames.data(), frames.size()});
+            BM bm(dev, 2);
 
             auto p0 = bm.create(); 
-            auto id0 = p0.id(); 
+            auto id0 = p0.pid(); 
             p0.reset();
             
             auto p1 = bm.create(); 
-            auto id1 = p1.id(); 
+            auto id1 = p1.pid();
             p1.reset();
-            bm.flush_all(true);
+            bm.flush_all();
 
             // touching p0 and p1 to set ref bits
             auto h0 = bm.fetch(id0); 
@@ -90,13 +89,20 @@ TEST_SUITE("storage/buffer_manager") {
 
             // third page forces eviction
             auto p2 = bm.create(); 
-            [[maybe_unused]] auto id2 = p2.id();
+            [[maybe_unused]] auto id2 = p2.pid();
             p2.reset();
-            bm.flush_all(true);
+            bm.flush_all();
 
             CHECK(bm.resident_pages() <= 2);
-            auto st = bm.get_stats();
-            CHECK(st.evictions >= 1);
+
+            SUBCASE("copy page_handle") {
+                auto ph = bm.fetch(id0);
+                auto ph_test0(ph);
+                auto ph_test1 = ph;
+
+                CHECK(ph_test0 == ph);
+                CHECK(ph_test1 == ph);
+            }
         }
 
         CHECK(std::filesystem::remove(path));

@@ -78,7 +78,7 @@ namespace fulla::codec::prop {
     }
 
     // Build a full record from a sequence of values (ui32, str, tuple, ...). NOT A TUPLE
-    template <class... Ts>
+    template <typename... Ts>
     rec make_record(Ts&&... xs) {
         data_serializer ds;
         (append_to(ds, std::forward<Ts>(xs)), ...);
