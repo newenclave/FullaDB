@@ -1455,7 +1455,6 @@ namespace fulla::bpt {
                             const auto parent = get_accessor().load_inode(node.get_parent());
                             const auto id = find_child_index_in_parent(parent, node.self());
                             update_inode_key(parent, id, key);
-                            std::cout << "";
                         }
                         else {
                             pos--;
@@ -1476,18 +1475,9 @@ namespace fulla::bpt {
         void update_parent_inode_key(inode_type parent, std::size_t pos, leaf_type from_node) {
             auto key = model_.key_out_as_like(from_node.get_key(0));
             if (!parent.can_update_key(pos, key)) {
-                //const auto psize = parent.size();
                 auto right = handle_inode_overflow(parent, rp_);
                 if (right.is_valid()) {
-                    //const auto rsize = right.size();
-                    //const auto npsize = parent.size();
                     key = model_.key_out_as_like(from_node.get_key(0));
-
-                    //const auto pparent = (parent.self() == from_node.get_parent());
-                    //const auto rparent = (right.self() == from_node.get_parent());
-
-                    //auto nparent = get_accessor().load_inode(from_node.get_parent());
-                    //auto nid = find_child_index_in_parent(nparent, from_node.self());
 
                     if (pos < parent.size()) {
                         DB_ASSERT(parent.self() == from_node.get_parent(), "parent is not the parent!");
@@ -1508,13 +1498,8 @@ namespace fulla::bpt {
 
         void update_inode_key(inode_type node, std::size_t pos, key_like_type key) {
             if (!node.can_update_key(pos, key)) {
-                //const auto psize = node.size();
-
                 auto right = handle_inode_overflow(node, rp_);
                 if (right.is_valid()) {
-
-                    //const auto rsize = right.size();
-                    //const auto npsize = node.size();
 
                     if (pos < node.size()) {
                         node.update_key(pos, key);

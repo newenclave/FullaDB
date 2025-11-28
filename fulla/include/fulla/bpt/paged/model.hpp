@@ -12,6 +12,7 @@
 #include <optional>
 #include <ranges>
 #include <algorithm>
+#include <functional>
 
 #include "fulla/core/assert.hpp"
 #include "fulla/bpt/concepts.hpp"
@@ -696,24 +697,36 @@ namespace fulla::bpt::paged {
             return false;
         }
 
-        constexpr static node_id_type get_invalid_node_id() {
+        static node_id_type get_invalid_node_id() noexcept {
             return invalid_node_value;
         }
 
-        static std::string id_as_string(node_id_type id) {
-            return std::to_string(id);
+        template <typename IasT, typename KasT, typename VasT>
+        void set_stringifier_callbacks(IasT ias, KasT kas, VasT vas) {
+            id_as_string_ = std::move(ias);
+            key_as_string_ = std::move(kas);
+            value_as_string_ = std::move(vas);
         }
 
-        static std::string key_as_string(const key_out_type &kout) {
-            std::ostringstream oss;
-            codec::data_view::debug_print(oss, kout.key, "");
-            return oss.str();
+        std::string id_as_string(node_id_type id) const {
+            if (id_as_string_) {
+                return id_as_string_(id);
+            }
+            return {};
         }
 
-        static std::string value_as_string(const value_out_type vout) {
-            std::string res(reinterpret_cast<const char*>(vout.val.data()), vout.val.size());
-            return res;
-            //return std::to_string(vout.val.size());
+        std::string key_as_string(const key_out_type &kout) const {
+            if (key_as_string_) {
+                return key_as_string_(kout);
+            }
+            return {};
+        }
+
+        std::string value_as_string(const value_out_type vout) const {
+            if (value_as_string_) {
+                return value_as_string_(vout);
+            }
+            return {};
         }
 
         accessor_type &get_accessor() noexcept {
@@ -733,6 +746,9 @@ namespace fulla::bpt::paged {
         }
 
     private:
+        std::function<std::string(const key_out_type&)> key_as_string_;
+        std::function<std::string(const value_out_type&)> value_as_string_;
+        std::function<std::string(node_id_type)> id_as_string_;
         accessor_type accessor_;
     };
 

@@ -144,22 +144,13 @@ TEST_SUITE("bpt/paged/model bpt") {
 				std::cout << "File: " << path.string() << "\n";
 
 				for (unsigned int i = 0; i < element_mximum; ++i) {
-					//if (i >= tests_values.size()) {
-					//	break;
-					//}
-					//auto ts = tests_values[i];
-					auto ts = get_random_string(5, 60);
 
+					auto ts = get_random_string(5, 60);
 					auto key = prop::make_record(prop::str{ts});
-					//std::cout << "\"" << ts << "\", ";
 
 					if (!test.contains(ts)) {
 						test[ts] = ts;
 						CHECK(bm.has_free_frames());
-
-						if (i == 152) {
-							std::cout << "";
-						}
 
 						REQUIRE(bpt.insert(key_like_type{ key.view() }, as_value_in(ts), 
 							policies::insert::insert, policies::rebalance::neighbor_share));
@@ -167,10 +158,6 @@ TEST_SUITE("bpt/paged/model bpt") {
 						if (itr == bpt.end()) {
 							bpt.dump();
 						}
-					}
-
-					else {
-						std::cout << "";
 					}
 				}
 
@@ -188,9 +175,6 @@ TEST_SUITE("bpt/paged/model bpt") {
 
 				validate_keys(bpt);
 				check_map();
-
-				//bpt.dump();
-				//std::cout << "=====================\n";
 
 				const auto tsize = test.size();
 				for (unsigned int i = 0; i < tsize / 2; ++i) {
@@ -217,8 +201,6 @@ TEST_SUITE("bpt/paged/model bpt") {
 
 				validate_keys(bpt);
 				check_map();
-
-				//bpt.dump();
 			}
 
 			std::cout << "Result filesize: " << mem.get_file_size() << "\n";
@@ -235,6 +217,7 @@ TEST_SUITE("bpt/paged/model bpt") {
 		using BM = buffer_manager<memory_device>;
 		BM bm(mem, 40);
 		using model_type = paged::model<memory_device, std::uint32_t, string_less>;
+		using node_id_type = typename model_type::node_id_type;
 		using bpt_type = fulla::bpt::tree<model_type>;
 
 		static std::random_device rd;
@@ -253,6 +236,13 @@ TEST_SUITE("bpt/paged/model bpt") {
 					CHECK(itr != bpt.end());
 				}
 			}
+			validate_keys(bpt);
+			bpt.get_model().set_stringifier_callbacks(
+				[&](node_id_type id) -> std::string { return id == bpt.get_model().get_invalid_node_id() ? "<null>" : std::to_string(id); },
+				[](key_out_type kout) -> std::string { return std::string{ (const char*)kout.key.data(), kout.key.size() }; },
+				[](value_out_type vout) -> std::string { return std::string{ (const char*)vout.val.data(), vout.val.size() }; }
+			);
+			bpt.dump();
 
 			while (!test.empty()) {
 				auto val = test.begin();
@@ -265,6 +255,7 @@ TEST_SUITE("bpt/paged/model bpt") {
 
 				test.erase(val);
 			}
+			validate_keys(bpt);
 		}
 
 	}
