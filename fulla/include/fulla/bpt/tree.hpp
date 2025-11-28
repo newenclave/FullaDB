@@ -477,6 +477,9 @@ namespace fulla::bpt {
                 right.set_parent(node.get_parent());
 
                 for (std::size_t id = middle_element + 1; id < node.size(); ++id) {
+                    if (id == 33) {
+                        std::cout << "";
+                    }
                     auto borrow_key = node.borrow_key(id);
                     auto next_child = node.get_child(id);
                     visit_node([&](auto& cnode) { cnode.set_parent(right.self()); }, next_child);

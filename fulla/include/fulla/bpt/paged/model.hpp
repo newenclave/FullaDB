@@ -64,9 +64,15 @@ namespace fulla::bpt::paged {
         using page_view_type = page::page_view<slot_directory_type>;
     }
 
+    template <typename KeyLessT>
+    concept ModelKeyLessConcept = requires (const KeyLessT klt, byte_view a, byte_view b) {
+        { klt.compare(a, b) } -> std::convertible_to<std::partial_ordering>;
+        { klt.operator ()(a, b) } -> std::convertible_to<bool>;
+    };
+
     template <storage::RandomAccessDevice DeviceT, 
         typename PidT = std::uint32_t, 
-        typename KeyLessT = page::record_less>
+        ModelKeyLessConcept KeyLessT = page::record_less>
     struct model {
 
         using buffer_manager_type = storage::buffer_manager<DeviceT, PidT>;
@@ -192,9 +198,16 @@ namespace fulla::bpt::paged {
                 return {};
             }
 
-            bool erase(std::size_t pos) const {
+            bool check_mark_dirty(bool ok) {
+                if (ok) {
+                    hdl_.mark_dirty();
+                }
+                return ok;
+            }
+
+            bool erase(std::size_t pos) {
                 auto slots = this->get_slots();
-                return slots.erase(pos);
+                return check_mark_dirty(slots.erase(pos));
             }
 
             bool is_valid() const {
@@ -254,7 +267,7 @@ namespace fulla::bpt::paged {
                 return std::distance(slots_view.begin(), it);
             }
 
-            bool update_key(std::size_t pos, key_like_type k) const {
+            bool update_key(std::size_t pos, key_like_type k) {
                 auto slots = this->get_slots();
                 leaf_value_extractor lve;
                 auto old_slot = slots.get_slot(pos);
@@ -277,14 +290,13 @@ namespace fulla::bpt::paged {
                         DB_ASSERT(false, "something went wrong");
                         return false;
                     }
-
-                    return true;
+                    return this->check_mark_dirty(true);
                 }
                 DB_ASSERT(false, "something went wrong");
                 return false; // ?
             }
 
-            bool insert_value(std::size_t pos, key_like_type k, value_in_type v) const {
+            bool insert_value(std::size_t pos, key_like_type k, value_in_type v) {
                 auto slots = this->get_slots();
                 auto new_full_len = sizeof(page::bpt_leaf_slot) + k.key.size() + v.val.size();
                 if (!this->check_length(new_full_len)) {
@@ -298,7 +310,7 @@ namespace fulla::bpt::paged {
                     hdr->update(k.key.size());
                     std::memcpy(data.data() + hdr->key_offset(), k.key.data(), k.key.size());
                     std::memcpy(data.data() + hdr->value_offset(), v.val.data(), v.val.size());
-                    return true;
+                    return this->check_mark_dirty(true);
                 }
                 DB_ASSERT(false, "something went wrong");
                 return false;
@@ -324,7 +336,7 @@ namespace fulla::bpt::paged {
                         DB_ASSERT(false, "something went wrong");
                         return false;
                     }
-                    return true;
+                    return this->check_mark_dirty(true);
                 }
                 DB_ASSERT(false, "something went wrong");
                 return false;
@@ -348,7 +360,7 @@ namespace fulla::bpt::paged {
                 return slots.can_update(pos, new_full_len);
             }
 
-            value_out_type get_value(std::size_t pos) {
+            value_out_type get_value(std::size_t pos) const {
                 auto slots = this->get_slots();
                 if (pos < slots.size()) {
                     leaf_value_extractor lve;
@@ -357,7 +369,7 @@ namespace fulla::bpt::paged {
                 return {};
             }
 
-            value_borrow_type borrow_value(std::size_t pos) {
+            value_borrow_type borrow_value(std::size_t pos) const {
                 auto slots = this->get_slots();
                 if (pos < slots.size()) {
                     leaf_value_extractor lve;
@@ -373,6 +385,7 @@ namespace fulla::bpt::paged {
                 auto pv = this->get_page();
                 auto hdr = pv.subheader<page::bpt_leaf_header>();
                 hdr->next = nv;
+                this->check_mark_dirty(true);
             }
             
             node_id_type get_next() const {
@@ -385,6 +398,7 @@ namespace fulla::bpt::paged {
                 auto pv = this->get_page();
                 auto hdr = pv.subheader<page::bpt_leaf_header>();
                 hdr->prev = nv;
+                this->check_mark_dirty(true);
             }
 
             node_id_type get_prev() const {
@@ -397,9 +411,10 @@ namespace fulla::bpt::paged {
                 page_view_type pv = this->get_page();
                 auto* inode_hdr = pv.subheader<page::bpt_leaf_header>();
                 inode_hdr->parent = new_value;
+                this->check_mark_dirty(true);
             }
 
-            node_id_type get_parent() {
+            node_id_type get_parent() const {
                 page_view_type pv = this->get_page();
                 auto* inode_hdr = pv.subheader<page::bpt_leaf_header>();
                 return inode_hdr->parent;
@@ -436,7 +451,7 @@ namespace fulla::bpt::paged {
                 return std::distance(slots_view.begin(), it);
             }
 
-            bool update_key(std::size_t pos, key_like_type k) const {
+            bool update_key(std::size_t pos, key_like_type k) {
                 auto slots = this->get_slots();
                 const auto old_data = slots.get_slot(pos);
                 const auto* old_slot_hdr = reinterpret_cast<const page::bpt_inode_slot*>(old_data.data());
@@ -451,7 +466,7 @@ namespace fulla::bpt::paged {
                     auto* slot_hdr = reinterpret_cast<page::bpt_inode_slot*>(new_value.data());
                     slot_hdr->child = old_child_value;
                     std::memcpy(new_value.data() + slot_hdr->key_offset(), k.key.data(), k.key.size());
-                    return true;
+                    return this->check_mark_dirty(true);
                 }
                 DB_ASSERT(false, "something went wrong");
                 return false; // ?
@@ -461,6 +476,7 @@ namespace fulla::bpt::paged {
                 page_view_type pv = this->get_page();
                 auto* inode_hdr = pv.subheader<page::bpt_inode_header>();
                 inode_hdr->parent = new_value;
+                this->check_mark_dirty(true);
             }
 
             node_id_type get_parent() {
@@ -489,7 +505,7 @@ namespace fulla::bpt::paged {
                 return true;
             }
 
-            bool insert_child(std::size_t pos, key_like_type k, node_id_type c) const {
+            bool insert_child(std::size_t pos, key_like_type k, node_id_type c) {
                 auto slots = this->get_slots();
                 const auto full_len = k.key.size() + sizeof(page::bpt_inode_slot);
                 if (full_len > maximum_inode_slot_size) {
@@ -500,15 +516,15 @@ namespace fulla::bpt::paged {
                     auto slot_hdr = reinterpret_cast<page::bpt_inode_slot*>(new_slot.data());
                     slot_hdr->child = c;
                     std::memcpy(new_slot.data() + slot_hdr->key_offset(), k.key.data(), k.key.size());
-                    return true;
+                    return this->check_mark_dirty(true);
                 }
                 return false;
             }
 
-            bool update_child(std::size_t pos, node_id_type c) const {
+            bool update_child(std::size_t pos, node_id_type c) {
                 if (auto c_ptr = get_child_ptr(pos)) {
                     *c_ptr = c;
-                    return true;
+                    return this->check_mark_dirty(true);
                 }
                 return false;
             }
@@ -566,6 +582,7 @@ namespace fulla::bpt::paged {
                     subhdr->parent = invalid_node_value;
                     subhdr->next = invalid_node_value;
                     subhdr->prev = invalid_node_value;
+                    new_page.mark_dirty();
 
                     return { 
                         pv, page_id, std::move(new_page), 
@@ -586,7 +603,9 @@ namespace fulla::bpt::paged {
                     auto subhdr = pv.subheader<page::bpt_inode_header>();
                     subhdr->init();
                     subhdr->parent = invalid_node_value;
-                    return { pv, page_id, std::move(new_page), 
+                    new_page.mark_dirty();
+
+                    return { pv, page_id, std::move(new_page),
                         sett_.inode_minimum_slot_size, 
                         sett_.inode_maximum_slot_size 
                     };
@@ -594,7 +613,11 @@ namespace fulla::bpt::paged {
                 return { };
             }
 
-            bool destroy(node_id_type) {
+            bool destroy(node_id_type id) {
+                if (destroy_hook_) {
+                    destroy_hook_(id);
+                }
+                /// TODO: clean the page
                 return true;
             }
 
@@ -657,12 +680,17 @@ namespace fulla::bpt::paged {
             }
 
             void set_root(node_id_type id) {
+                if (set_root_hook_) {
+                    set_root_hook_(id);
+                }
                 root_ = {id};
             }
 
             std::optional<node_id_type> root_ {};
             buffer_manager_type &mgr_;
             settings sett_{};
+            std::function<void(node_id_type)> destroy_hook_;
+            std::function<void(node_id_type)> set_root_hook_;
         };
 
         static_assert(concepts::NodeAccessor<accessor_type, node_id_type, inode_type, leaf_type>);

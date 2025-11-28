@@ -63,7 +63,6 @@ namespace {
 		return res;
 	}
 
-
 	constexpr static const auto DEFAULT_BUFFER_SIZE = 4096UL;
 
 	key_like_type as_key_like(const std::string& val) {
@@ -103,7 +102,6 @@ namespace {
 		bool operator ()(byte_view a, byte_view b) const noexcept {
 			return std::is_lt(compare(a, b));
 		}
-
 		auto compare(byte_view a, byte_view b) const noexcept {
 			return std::lexicographical_compare_three_way(
 				a.begin(), a.end(),
@@ -156,6 +154,7 @@ TEST_SUITE("bpt/paged/model bpt") {
 							policies::insert::insert, policies::rebalance::neighbor_share));
 						auto itr = bpt.find(key_like_type{ key.view() });
 						if (itr == bpt.end()) {
+							std::cout << "\n\nfailed to find: " << ts << "\n\n";
 							bpt.dump();
 						}
 					}
@@ -209,13 +208,13 @@ TEST_SUITE("bpt/paged/model bpt") {
 	}
 
 	TEST_CASE("custom less") {
-		constexpr static const auto small_buffer_size = DEFAULT_BUFFER_SIZE / 4;
+		constexpr static const auto small_buffer_size = DEFAULT_BUFFER_SIZE / 6;
 		constexpr static const auto element_mximum = 1000;
 
 		memory_device mem(small_buffer_size);
 
 		using BM = buffer_manager<memory_device>;
-		BM bm(mem, 40);
+		BM bm(mem, 6);
 		using model_type = paged::model<memory_device, std::uint32_t, string_less>;
 		using node_id_type = typename model_type::node_id_type;
 		using bpt_type = fulla::bpt::tree<model_type>;
@@ -226,23 +225,31 @@ TEST_SUITE("bpt/paged/model bpt") {
 		SUBCASE("Create string -> string") {
 			bpt_type bpt(bm);
 			std::map<std::string, std::string> test;
-			
-			for (int i = 0; i < element_mximum; ++i) {
-				auto ts = get_random_string(5, 26);
-				if (!test.contains(ts)) {
-					bpt.insert(as_key_like(ts), as_value_in(ts));
-					test[ts] = ts;
-					auto itr = bpt.find(as_key_like(ts));
-					CHECK(itr != bpt.end());
-				}
-			}
-			validate_keys(bpt);
+
 			bpt.get_model().set_stringifier_callbacks(
 				[&](node_id_type id) -> std::string { return id == bpt.get_model().get_invalid_node_id() ? "<null>" : std::to_string(id); },
 				[](key_out_type kout) -> std::string { return std::string{ (const char*)kout.key.data(), kout.key.size() }; },
 				[](value_out_type vout) -> std::string { return std::string{ (const char*)vout.val.data(), vout.val.size() }; }
 			);
-			bpt.dump();
+
+			for (int i = 0; i < element_mximum; ++i) {
+				auto ts = get_random_string(5, 26);
+				if (!test.contains(ts)) {
+
+					bpt.insert(as_key_like(ts), as_value_in(ts));
+					bm.flush_all();
+					test[ts] = ts;
+					//std::cout << "\"" << ts << "\", ";
+					auto itr = bpt.find(as_key_like(ts));
+					if (itr == bpt.end()) {
+						std::cout << "\n\nFail to find: " << ts << "\n";
+						bpt.dump();
+					}
+					REQUIRE(itr != bpt.end());
+				}
+			}
+			validate_keys(bpt);
+			//bpt.dump();
 
 			while (!test.empty()) {
 				auto val = test.begin();

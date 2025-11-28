@@ -28,17 +28,18 @@ namespace fulla::page {
     using core::byte_view;
     using core::byte_buffer;
 
-    template<slots::SlotDirectoryConcept SdT>
-    struct page_view {
+    template<slots::SlotDirectoryConcept SdT, typename SpanT>
+        requires(std::same_as<SpanT, byte_span> || std::same_as<SpanT, byte_view>)
+    struct page_view_common {
 
         // Construct from page buffer
-        explicit page_view(byte_buffer& page) : page_(page.data(), page.size()) {}
-        explicit page_view(byte_span page) : page_(page) {}
-        page_view() = default;
-        page_view(const page_view&) = default;
-        page_view& operator=(const page_view&) = default;
+        explicit page_view_common(byte_buffer& page) : page_(page.data(), page.size()) {}
+        explicit page_view_common(SpanT page) : page_(page) {}
+        page_view_common() = default;
+        page_view_common(const page_view_common&) = default;
+        page_view_common& operator=(const page_view_common&) = default;
 
-        byte_span get() const { return page_; }
+        SpanT get() const { return page_; }
 
         // Header access
         page_header& header() { return *reinterpret_cast<page_header*>(page_.data()); }
@@ -85,11 +86,17 @@ namespace fulla::page {
             return sizeof(page_header) + h.subhdr_size;
         }
 
-        byte_span get_slot_directory() const {
+        SpanT get_slot_directory() const {
             return { page_.data() + headers_len(),  capacity() };
         }
 
-        byte_span page_{};
+        SpanT page_{};
     };
+
+    template <slots::SlotDirectoryConcept SdT>
+    using page_view = page_view_common<SdT, byte_span>;
+
+    template <slots::SlotDirectoryConcept SdT>
+    using const_page_view = page_view_common<SdT, byte_view>;
 
 } // namespace fulla::page

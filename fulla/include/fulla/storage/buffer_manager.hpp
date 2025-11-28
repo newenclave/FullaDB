@@ -73,7 +73,7 @@ namespace fulla::storage {
 
 			bool dirty = false;
 			pid_type pid = invalid_pid;
-			std::atomic<std::size_t> ref_count = 0;
+			std::size_t ref_count = 0;
 			std::size_t gen = 1;
 			core::byte_span data;
 			frame* next = nullptr;
@@ -127,10 +127,16 @@ namespace fulla::storage {
 				return pid() != invalid_pid;
 			}
 
+			void mark_dirty() {
+				if (frame_) {
+					frame_->make_dirty();
+				}
+			}
+
 			core::byte_span rw_span() noexcept {
 				if (frame_) {
 					DB_ASSERT(check_slot_gen(), "Bad slot");
-					frame_->make_dirty();
+					//frame_->make_dirty();
 					return frame_->data;
 				}
 				return {};
@@ -297,11 +303,12 @@ namespace fulla::storage {
 			return false;
 		}
 
-		//private:
 
 		void flush_all() {
 			std::ranges::for_each(frames_, [this](auto& frame) { flush(&frame); });
 		}
+
+	//private:
 
 		void flush(frame* fs) {
 			if (fs->dirty) {
