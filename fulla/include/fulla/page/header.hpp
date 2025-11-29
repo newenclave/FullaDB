@@ -22,11 +22,13 @@ namespace fulla::page {
 
     // Logical kind of a page in the file.
     enum class page_kind : word_u16::word_type {
-        undefined  = 0,
-        heap       = 1,
-        bpt_leaf   = 2,
-        bpt_inode  = 3,
-        long_store = 4,
+        undefined   = 0,
+        sys_page    = 1,
+        heap        = 2,
+        bpt_root    = 3,
+        bpt_leaf    = 4,
+        bpt_inode   = 5,
+        long_store  = 6,
     };
 
     // Common page header that prefixes every page in the file.
@@ -34,7 +36,7 @@ namespace fulla::page {
     FULLA_PACKED_STRUCT_BEGIN
     struct page_header {
         word_u16 kind {0};         // page_kind
-        word_u16 reserved {0};     // number of occupied slot entries
+        word_u16 reserved {0};     //
 
         word_u16 subhdr_size{ 0 }; // size of type-specific subheader right after page_header
         word_u16 page_end{ 0 };    // full page size

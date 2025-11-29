@@ -371,7 +371,7 @@ namespace fulla::page::slots {
                 }
 
                 // 3) fallback: compact and try again
-                // mark as "absent" to reclaim its old space by compact()
+                // mark as "invalid" to reclaim its old space by compact()
                 auto size_after_compact = static_cast<std::size_t>(available_after_compact()) + cur_cap;
                 if (size_after_compact >= new_cap) {
                     s.off = SLOT_INVALID;

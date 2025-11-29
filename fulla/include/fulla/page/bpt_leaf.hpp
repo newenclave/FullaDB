@@ -16,6 +16,9 @@ namespace fulla::page {
     using core::word_u16;
     using core::word_u32;
 
+    using pid_type = word_u32;
+    using pid_value_type = typename pid_type::word_type;
+
 FULLA_PACKED_STRUCT_BEGIN
 
     struct bpt_leaf_header {

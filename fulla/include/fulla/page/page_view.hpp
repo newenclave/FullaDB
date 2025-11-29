@@ -55,6 +55,10 @@ namespace fulla::page {
             return reinterpret_cast<const SubHdrT*>(page_.data() + sizeof(page_header));
         }
 
+        std::size_t size() const noexcept {
+            return page_.size();
+        }
+
         word_u16::word_type base_off() const {
             return static_cast<word_u16::word_type>(headers_len());
         }

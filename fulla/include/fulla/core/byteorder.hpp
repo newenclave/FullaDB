@@ -217,6 +217,14 @@ namespace fulla::core::byteorder {
 			return to_native();
 		}
 
+		constexpr static auto max() {
+			return std::numeric_limits<word_type>::max();
+		}
+
+		constexpr static auto min() {
+			return std::numeric_limits<word_type>::min();
+		}
+
 	private:
 
 		constexpr word_type to_native() const {
@@ -262,6 +270,14 @@ namespace fulla::core::byteorder {
 
 		word_type get() const {
 			return to_native();
+		}
+
+		constexpr static auto max() {
+			return std::numeric_limits<word_type>::max();
+		}
+
+		constexpr static auto min() {
+			return std::numeric_limits<word_type>::min();
 		}
 
 	private:

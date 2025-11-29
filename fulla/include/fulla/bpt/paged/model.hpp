@@ -22,6 +22,9 @@
 #include "fulla/page/page_view.hpp"
 #include "fulla/page/bpt_inode.hpp"
 #include "fulla/page/bpt_leaf.hpp"
+#include "fulla/page/bpt_root.hpp"
+
+#include "fulla/page/freed.hpp"
 
 #include "fulla/page/slot_directory.hpp"
 #include "fulla/page/ranges.hpp"
@@ -62,6 +65,7 @@ namespace fulla::bpt::paged {
 
         using slot_directory_type = page::slots::variadic_directory_view<>;
         using page_view_type = page::page_view<slot_directory_type>;
+        using cpage_view_type = page::const_page_view<slot_directory_type>;
     }
 
     template <typename KeyLessT>
@@ -78,6 +82,7 @@ namespace fulla::bpt::paged {
         using buffer_manager_type = storage::buffer_manager<DeviceT, PidT>;
         using slot_directory_type = model_common::slot_directory_type;
         using page_view_type = model_common::page_view_type;
+        using cpage_view_type = model_common::cpage_view_type;
 
         using less_type = KeyLessT;
 
@@ -564,14 +569,20 @@ namespace fulla::bpt::paged {
             accessor_type(buffer_manager_type& mgr, settings sett)
                 : mgr_(mgr)
                 , sett_(std::move(sett))
-            {}
+            {
+                //check_create_root_node();
+            }
 
             accessor_type(buffer_manager_type& mgr)
                 : accessor_type(mgr, {})
             {}
 
             leaf_type create_leaf() {
-                auto new_page = mgr_.create();
+                typename buffer_manager_type::page_handle new_page = pop_free_page();
+
+                if (!new_page.is_valid()) {
+                    new_page = mgr_.create();
+                }
                 if (new_page.is_valid()) {
                     auto pv = page_view_type{ new_page.rw_span() };
                     const auto page_id = new_page.pid();
@@ -594,7 +605,10 @@ namespace fulla::bpt::paged {
             }
             
             inode_type create_inode() {
-                auto new_page = mgr_.create();
+                typename buffer_manager_type::page_handle new_page = pop_free_page();
+                if (!new_page.is_valid()) {
+                    new_page = mgr_.create();
+                }
                 if (new_page.is_valid()) {
                     auto pv = page_view_type{ new_page.rw_span() };
                     const auto page_id = new_page.pid();
@@ -617,7 +631,7 @@ namespace fulla::bpt::paged {
                 if (destroy_hook_) {
                     destroy_hook_(id);
                 }
-                /// TODO: clean the page
+                push_free_page(id);
                 return true;
             }
 
@@ -627,7 +641,8 @@ namespace fulla::bpt::paged {
                     const auto page_id = new_page.pid();
                     auto data = new_page.rw_span();
                     auto pv = page_view_type{ data };
-                    if (pv.header().kind == static_cast<std::uint16_t>(page::page_kind::bpt_leaf)) {
+                    const auto kind = pv.header().kind.get();
+                    if (kind == static_cast<std::uint16_t>(page::page_kind::bpt_leaf)) {
                         return leaf_type{ pv, page_id, 
                             std::move(new_page),
                             sett_.leaf_minimum_slot_size,
@@ -644,7 +659,8 @@ namespace fulla::bpt::paged {
                     const auto page_id = new_page.pid();
                     auto data = new_page.rw_span();
                     auto pv = page_view_type{ data };
-                    if (pv.header().kind == static_cast<std::uint16_t>(page::page_kind::bpt_inode)) {
+                    const auto kind = pv.header().kind.get();
+                    if (kind == static_cast<std::uint16_t>(page::page_kind::bpt_inode)) {
                         return inode_type{ pv, page_id, 
                             std::move(new_page),
                             sett_.inode_minimum_slot_size,
@@ -676,14 +692,62 @@ namespace fulla::bpt::paged {
                 if(root_) {
                     return { *root_, true };
                 }
-                return { {}, false };
+                return { invalid_node_value, false };
             }
 
             void set_root(node_id_type id) {
                 if (set_root_hook_) {
                     set_root_hook_(id);
                 }
-                root_ = {id};
+                if (id != invalid_node_value) {
+                    root_ = { id };
+                }
+                else {
+                    root_ = {};
+                }
+            }
+
+            auto pop_free_page() {
+                if (first_freed_ != invalid_node_value) {
+                    auto page = mgr_.fetch(first_freed_);
+                    if (page.is_valid()) {
+                        const auto pv = cpage_view_type{ page.ro_span() };
+                        const auto *fh = pv.subheader<page::freed>();
+                        first_freed_ = fh->next;
+                        return page;
+                    }
+                }
+                return typename buffer_manager_type::page_handle{};
+            }
+
+            void push_free_page(node_id_type id) {
+                auto page = mgr_.fetch(id);
+                if (page.is_valid()) {
+                    auto pv = page_view_type{ page.rw_span() };
+                    pv.header().init(page::page_kind::undefined, pv.size(), id, sizeof(page::freed));
+                    auto *fh = pv.subheader<page::freed>();
+                    fh->init();
+                    fh->next = first_freed_;
+                    first_freed_ = id;
+                    page.mark_dirty();
+                }
+            }
+
+            void check_create_root_node() {
+                auto first_node = mgr_.fetch(0);
+                if (!first_node.is_valid()) {
+                    first_node = mgr_.create();
+                    auto pv = page_view_type{ first_node.rw_span() };
+                    pv.header().init(page::page_kind::bpt_root, mgr_.page_size(), 0, sizeof(page::bpt_root));
+                    auto rh = pv.subheader<page::bpt_root>();
+                    rh->root = invalid_node_value;
+                    first_node.mark_dirty();
+                }
+                else {
+                    const auto pv = cpage_view_type{ first_node.ro_span() };
+                    const auto rh = pv.subheader<page::bpt_root>();
+                    root_ = { rh->root.get() };
+                }
             }
 
             std::optional<node_id_type> root_ {};
@@ -691,6 +755,7 @@ namespace fulla::bpt::paged {
             settings sett_{};
             std::function<void(node_id_type)> destroy_hook_;
             std::function<void(node_id_type)> set_root_hook_;
+            node_id_type first_freed_ = invalid_node_value;
         };
 
         static_assert(concepts::NodeAccessor<accessor_type, node_id_type, inode_type, leaf_type>);

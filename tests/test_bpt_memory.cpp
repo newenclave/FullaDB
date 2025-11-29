@@ -46,11 +46,13 @@ TEST_CASE("memory B+Tree: basic insert & find") {
     // insert ascending
     for (int i = 0; i < 50; ++i) {
         auto ts = std::to_string(i);
-        CHECK(t.insert(key_like_type{ i }, value_in_type{ts}, insert::insert, rebalance::neighbor_share) == true);
+        t.set_rebalance_policy(rebalance::neighbor_share);
+        CHECK(t.insert(key_like_type{ i }, value_in_type{ts}, insert::insert) == true);
     }
     // duplicates should fail with insert::insert
     std::string dup = "dup";
-    CHECK(t.insert(key_like_type{ 10 }, value_in_type{ dup }, insert::insert, rebalance::neighbor_share) == false);
+    t.set_rebalance_policy(rebalance::neighbor_share);
+    CHECK(t.insert(key_like_type{ 10 }, value_in_type{ dup }, insert::insert) == false);
 
     // find existing
     for (int i = 0; i < 50; ++i) {
@@ -153,7 +155,8 @@ TEST_CASE("memory B+Tree: lower_bound and range scan") {
 
     for (int i = 0; i < 100; ++i) {
         auto ts = std::to_string(i * 2);
-        CHECK(t.insert(key_like_type{ i * 2 }, value_in_type{ts}, insert::insert, rebalance::neighbor_share));
+        t.set_rebalance_policy(rebalance::neighbor_share);
+        CHECK(t.insert(key_like_type{ i * 2 }, value_in_type{ts}, insert::insert));
     }
 
     const auto cmp = [](int lhs, int rhs) {
@@ -196,9 +199,10 @@ TEST_CASE("memory B+Tree: upsert policy replaces value") {
     std::string ten = "ten";
     std::string TEN = "TEN";
 
-    CHECK(t.insert(key_like_type{ 10 }, value_in_type{ten}, insert::insert, rebalance::neighbor_share) == true);
+    t.set_rebalance_policy(rebalance::neighbor_share);
+    CHECK(t.insert(key_like_type{ 10 }, value_in_type{ten}, insert::insert) == true);
     // upsert should replace existing value
-    CHECK(t.insert(key_like_type{ 10 }, value_in_type{ TEN }, insert::upsert, rebalance::neighbor_share) == true);
+    CHECK(t.insert(key_like_type{ 10 }, value_in_type{ TEN }, insert::upsert) == true);
 
     auto it = t.find(key_like_type{ 10 });
     REQUIRE(it != t.end());
@@ -232,14 +236,14 @@ TEST_CASE("memory B+Tree vs std::map: randomized insert/erase equivalence (deter
     };
 
     const int steps = 15000;
+    t.set_rebalance_policy(rebalance::neighbor_share);
     for (int s = 0; s < steps; ++s) {
         int k = keyd(rng);
         if (insprob(rng)) {
 
             ref[k] = std::to_string(k);
             auto tsk = std::to_string(k);
-            CHECK(t.insert(key_like_type{ k }, value_in_type{ tsk },
-                insert::upsert, rebalance::neighbor_share));
+            CHECK(t.insert(key_like_type{ k }, value_in_type{ tsk }, insert::upsert));
             CHECK(check_valid());
         }
         else {
@@ -277,16 +281,17 @@ TEST_CASE("memory B+Tree split on update") {
     using value_in_type = typename Model::value_in_type;
 
     Tree t;
+    t.set_rebalance_policy(rebalance::neighbor_share);
     for (int i = 0; i < 20; ++i) {
         auto ts = "!" + std::to_string(i);
-        CHECK(t.insert(key_like_type{ i }, value_in_type{ ts }, insert::insert, rebalance::neighbor_share));
+        CHECK(t.insert(key_like_type{ i }, value_in_type{ ts }, insert::insert));
     }
 
     t.dump();
 
     std::string val = "01234567891112";
 
-    t.update(key_like_type{ 12 }, value_in_type{ val }, rebalance::neighbor_share);
+    t.update(key_like_type{ 12 }, value_in_type{ val });
 
     t.dump();
 

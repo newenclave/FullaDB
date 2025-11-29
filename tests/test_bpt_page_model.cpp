@@ -133,6 +133,8 @@ TEST_SUITE("bpt/paged/model bpt") {
 
 			SUBCASE("create tree") {
 				bpt_type bpt(bm);
+				bpt.set_rebalance_policy(policies::rebalance::neighbor_share);
+				bpt.get_accessor().check_create_root_node();
 				std::map<std::string, std::string> test;
 
 				std::vector<std::string> tests_values = {
@@ -150,8 +152,7 @@ TEST_SUITE("bpt/paged/model bpt") {
 						test[ts] = ts;
 						CHECK(bm.has_free_frames());
 
-						REQUIRE(bpt.insert(key_like_type{ key.view() }, as_value_in(ts), 
-							policies::insert::insert, policies::rebalance::neighbor_share));
+						REQUIRE(bpt.insert(key_like_type{ key.view() }, as_value_in(ts)));
 						auto itr = bpt.find(key_like_type{ key.view() });
 						if (itr == bpt.end()) {
 							std::cout << "\n\nfailed to find: " << ts << "\n\n";
@@ -175,7 +176,7 @@ TEST_SUITE("bpt/paged/model bpt") {
 				validate_keys(bpt);
 				check_map();
 
-				const auto tsize = test.size();
+				auto tsize = test.size();
 				for (unsigned int i = 0; i < tsize / 2; ++i) {
 
 					std::uniform_int_distribution<std::size_t> dist(0, test.size() - 1);
@@ -194,14 +195,39 @@ TEST_SUITE("bpt/paged/model bpt") {
 				for (auto &t: test) {
 					auto ts = get_random_string(5, 90);
 					auto key = prop::make_record(prop::str{ t.first });
-					REQUIRE(bpt.update(key_like_type{ key.view() }, as_value_in(ts), policies::rebalance::neighbor_share));
+					REQUIRE(bpt.update(key_like_type{ key.view() }, as_value_in(ts)));
 					test[t.first] = ts;
 				}
 
 				validate_keys(bpt);
 				check_map();
-			}
 
+				tsize = test.size();
+				for (unsigned int i = 0; i < tsize; ++i) {
+
+					if (i == tsize - 1) {
+						std::cout << "";
+					}
+					std::uniform_int_distribution<std::size_t> dist(0, test.size() - 1);
+					auto idx = dist(gen);
+					auto itr = test.begin();
+					std::advance(itr, idx);
+
+					auto key = prop::make_record(prop::str{ itr->first });
+					auto it = bpt.find(key_like_type{ key.view() });
+
+					CHECK(bpt.end() != it);
+					test.erase(itr);
+					bpt.erase(it);
+				}
+				validate_keys(bpt);
+				check_map();
+
+				CHECK(test.size() == 0);
+				auto [root, found] = bpt.get_model().get_accessor().load_root();
+				CHECK(root == bpt.get_model().get_invalid_node_id());
+				CHECK_FALSE(found);
+			}
 			std::cout << "Result filesize: " << mem.get_file_size() << "\n";
 		}
 		CHECK(std::filesystem::remove(path));
@@ -214,7 +240,7 @@ TEST_SUITE("bpt/paged/model bpt") {
 		memory_device mem(small_buffer_size);
 
 		using BM = buffer_manager<memory_device>;
-		BM bm(mem, 6);
+		BM bm(mem, 8);
 		using model_type = paged::model<memory_device, std::uint32_t, string_less>;
 		using node_id_type = typename model_type::node_id_type;
 		using bpt_type = fulla::bpt::tree<model_type>;
@@ -226,6 +252,7 @@ TEST_SUITE("bpt/paged/model bpt") {
 			bpt_type bpt(bm);
 			std::map<std::string, std::string> test;
 
+			bpt.get_accessor().check_create_root_node();
 			bpt.get_model().set_stringifier_callbacks(
 				[&](node_id_type id) -> std::string { return id == bpt.get_model().get_invalid_node_id() ? "<null>" : std::to_string(id); },
 				[](key_out_type kout) -> std::string { return std::string{ (const char*)kout.key.data(), kout.key.size() }; },
@@ -236,8 +263,7 @@ TEST_SUITE("bpt/paged/model bpt") {
 				auto ts = get_random_string(5, 26);
 				if (!test.contains(ts)) {
 
-					bpt.insert(as_key_like(ts), as_value_in(ts));
-					bm.flush_all();
+					bpt.insert(as_key_like(ts), as_value_in(ts), policies::insert::insert);
 					test[ts] = ts;
 					//std::cout << "\"" << ts << "\", ";
 					auto itr = bpt.find(as_key_like(ts));
@@ -252,6 +278,9 @@ TEST_SUITE("bpt/paged/model bpt") {
 			//bpt.dump();
 
 			while (!test.empty()) {
+				if (test.size() == 2) {
+					std::cout << "";
+				}
 				auto val = test.begin();
 				auto itr = bpt.find(as_key_like(val->first));
 				
