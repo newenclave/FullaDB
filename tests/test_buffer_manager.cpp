@@ -5,6 +5,7 @@
 #include "fulla/page/header.hpp"
 #include "fulla/storage/device.hpp"
 #include "fulla/storage/file_device.hpp"
+#include "fulla/storage/memory_device.hpp"
 #include "fulla/storage/buffer_manager.hpp"
 
 #include <filesystem>
@@ -106,5 +107,31 @@ TEST_SUITE("storage/buffer_manager") {
         }
 
         CHECK(std::filesystem::remove(path));
+    }
+
+    TEST_CASE("exhaustion under pressure") {
+        memory_device device(256);
+		using BM = buffer_manager<memory_device>;
+        BM bm(device, 3);
+		auto p0 = bm.create();
+        auto p1 = bm.create();
+        auto p2 = bm.create();
+
+        CHECK(p0.is_valid());
+        CHECK(p1.is_valid());
+        CHECK(p2.is_valid());
+
+        p0.reset();
+        p1.reset();
+        p2.reset();
+
+        p0 = bm.fetch(0);
+        p1 = bm.fetch(1);
+        p2 = bm.fetch(2);
+
+        CHECK(p0.is_valid());
+        CHECK(p1.is_valid());
+        CHECK(p2.is_valid());
+
     }
 }

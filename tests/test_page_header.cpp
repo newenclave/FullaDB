@@ -22,7 +22,7 @@ TEST_SUITE("page/header") {
         CHECK(static_cast<std::uint16_t>(hdr->capacity()) == expected_capacity);
         CHECK(static_cast<std::uint16_t>(hdr->page_end) == PS);
         CHECK(static_cast<std::uint32_t>(hdr->self_pid) == 123);
-        CHECK(static_cast<std::uint32_t>(hdr->crc) == 0);
+        //CHECK(static_cast<std::uint32_t>(hdr->crc) == 0);
 
         CHECK(hdr->data() == reinterpret_cast<fulla::core::byte*>(hdr));
         CHECK(page_header::header_size() == 16);

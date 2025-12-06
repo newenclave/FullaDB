@@ -28,7 +28,8 @@ namespace fulla::page {
         bpt_root    = 3,
         bpt_leaf    = 4,
         bpt_inode   = 5,
-        long_store  = 6,
+        long_store_head  = 6,
+        long_store_chunk = 7,
     };
 
     // Common page header that prefixes every page in the file.
@@ -51,7 +52,7 @@ namespace fulla::page {
             reserved = 0;
             page_end = static_cast<word_u16::word_type>(page_size);
             subhdr_size = static_cast<word_u16::word_type>(subheader_size);
-            crc = 0;
+            crc = 0xBAADF00D;
         }
 
         static page_header *to_header(void *ptr) {

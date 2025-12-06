@@ -11,5 +11,5 @@
 
 #ifndef DB_ASSERT
 #include <cassert>
-#define DB_ASSERT(cond, msg) do { (void)(msg); assert(cond); } while(0)
+#define DB_ASSERT(cond, msg) do { static_cast<void>(msg); assert(cond); } while(0)
 #endif

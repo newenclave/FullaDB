@@ -234,7 +234,7 @@ namespace fulla::storage {
 			first_freed_ = &frames_[0];
 		}
 
-		page_handle create() {
+		page_handle create(bool mark_dirty = false) {
 			if (auto fs_idx = find_free_frame()) {
 				auto buffer_data = frame_id_to_span(*fs_idx);
 				const auto new_off = device_->allocate_block();
@@ -243,6 +243,9 @@ namespace fulla::storage {
 				fs->reinit(new_pid, buffer_data);
 				push_frame_used(fs);
 				cache_[new_pid] = fs;
+				if (mark_dirty) {
+					fs->make_dirty();
+				}
 				return page_handle(this, fs);
 			}
 			return {};
@@ -261,12 +264,15 @@ namespace fulla::storage {
 			if (auto fs_idx = find_free_frame()) {
 				auto buffer_data = frame_id_to_span(*fs_idx);
 				const auto ok = read(pid, buffer_data);
+				auto* fs = &frames_[*fs_idx];
 				if (ok) {
-					auto* fs = &frames_[*fs_idx];
 					fs->reinit(pid, buffer_data);
 					push_frame_used(fs);
 					cache_[pid] = fs;
 					return { this, fs };
+				}
+				else {
+					push_frame_freed(fs);
 				}
 			}
 			return {};

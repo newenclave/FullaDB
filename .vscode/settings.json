@@ -77,5 +77,6 @@
         "numeric": "cpp",
         "ranges": "cpp",
         "variant": "cpp"
-    }
+    },
+    "claudeCodeChat.permissions.yoloMode": false
 }

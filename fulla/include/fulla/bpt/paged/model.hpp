@@ -350,7 +350,7 @@ namespace fulla::bpt::paged {
             bool can_insert_value(std::size_t, key_like_type k, value_in_type v) {
                 const auto slots = this->get_slots();
                 const auto new_full_len = sizeof(page::bpt_leaf_slot) + k.key.size() + v.val.size();
-                const bool size_ok = this->check_length(new_full_len);
+                [[maybe_unused]] const bool size_ok = this->check_length(new_full_len);
                 DB_ASSERT(size_ok, "Something went wrong");
                 return slots.can_insert(new_full_len);
             }
@@ -360,7 +360,7 @@ namespace fulla::bpt::paged {
                 const auto old_value = slots.get_slot(pos);
                 auto k = leaf_key_extractor{}(old_value);
                 const auto new_full_len = sizeof(page::bpt_leaf_slot) + k.size() + v.val.size();
-                const bool size_ok = this->check_length(new_full_len);
+                [[maybe_unused]] const bool size_ok = this->check_length(new_full_len);
                 DB_ASSERT(size_ok, "Something went wrong");
                 return slots.can_update(pos, new_full_len);
             }
@@ -565,6 +565,9 @@ namespace fulla::bpt::paged {
         {}
 
         struct accessor_type {
+
+            using leaf_type = model::leaf_type;
+            using inode_type = model::inode_type;
 
             accessor_type(buffer_manager_type& mgr, settings sett)
                 : mgr_(mgr)

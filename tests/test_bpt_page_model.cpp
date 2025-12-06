@@ -118,7 +118,7 @@ TEST_SUITE("bpt/paged/model bpt") {
 
 		auto path = temp_file("test_page_model");
 		{
-			constexpr static const auto small_buffer_size = DEFAULT_BUFFER_SIZE / 4;
+			constexpr static const auto small_buffer_size = DEFAULT_BUFFER_SIZE;
 			constexpr static const auto element_mximum = 10000;
 
 			file_device dev(path, small_buffer_size);
@@ -240,7 +240,7 @@ TEST_SUITE("bpt/paged/model bpt") {
 		memory_device mem(small_buffer_size);
 
 		using BM = buffer_manager<memory_device>;
-		BM bm(mem, 8);
+		BM bm(mem, 6);
 		using model_type = paged::model<memory_device, std::uint32_t, string_less>;
 		using node_id_type = typename model_type::node_id_type;
 		using bpt_type = fulla::bpt::tree<model_type>;
@@ -278,9 +278,6 @@ TEST_SUITE("bpt/paged/model bpt") {
 			//bpt.dump();
 
 			while (!test.empty()) {
-				if (test.size() == 2) {
-					std::cout << "";
-				}
 				auto val = test.begin();
 				auto itr = bpt.find(as_key_like(val->first));
 				

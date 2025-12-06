@@ -42,13 +42,25 @@ namespace fulla::page {
         SpanT get() const { return page_; }
 
         // Header access
-        page_header& header() { return *reinterpret_cast<page_header*>(page_.data()); }
+        auto& header() { 
+            if constexpr (std::same_as<SpanT, byte_span>) {
+                return *reinterpret_cast<page_header*>(page_.data());
+            }
+            else {
+                return *reinterpret_cast<const page_header*>(page_.data());
+			}
+        }
         const page_header& header() const { return *reinterpret_cast<const page_header*>(page_.data()); }
 
         // Optional typed subheader
         template <class SubHdrT>
-        SubHdrT* subheader() {
-            return reinterpret_cast<SubHdrT*>(page_.data() + sizeof(page_header));
+        auto subheader() {
+            if constexpr (std::same_as<SpanT, byte_span>) {
+                return reinterpret_cast<SubHdrT*>(page_.data() + sizeof(page_header));
+            }
+            else {
+                return reinterpret_cast<const SubHdrT*>(page_.data() + sizeof(page_header));
+            }
         }
         template <class SubHdrT>
         const SubHdrT* subheader() const {
@@ -63,7 +75,7 @@ namespace fulla::page {
             return static_cast<word_u16::word_type>(headers_len());
         }
 
-        byte* base_ptr() {
+        auto* base_ptr() {
             return page_.data() + headers_len();
         }
 

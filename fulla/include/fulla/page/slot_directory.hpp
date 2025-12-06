@@ -777,6 +777,31 @@ namespace fulla::page::slots {
         std::span<byte> body_;
     };
 
+	struct empty_directory_view {
+        struct slot_type {};
+        struct directory_header {};
+
+        empty_directory_view() = default;
+        constexpr empty_directory_view(core::byte_span) {}
+
+        constexpr static void init() noexcept { }
+        constexpr static std::size_t size() noexcept { return 0; }
+        constexpr static std::size_t capacity_for(std::size_t) noexcept { return 0; }
+        constexpr static std::size_t minumum_slot_size() noexcept { return 0; }
+        constexpr static std::size_t maximum_slot_size() noexcept { return 0; }
+        constexpr static byte_span reserve_get(std::size_t, std::size_t) noexcept { return {}; }
+        constexpr static byte_span update_get(std::size_t, std::size_t) noexcept { return {}; }
+		constexpr static bool insert(std::size_t, byte_view) noexcept { return false; }
+		constexpr static bool update(std::size_t, byte_view) noexcept { return false; }
+		constexpr static bool erase(std::size_t) noexcept { return false; }
+		constexpr static bool can_insert(std::size_t) noexcept { return false; }
+		constexpr static bool can_update(std::size_t, std::size_t) noexcept { return false; }
+        constexpr static std::size_t available() noexcept { return 0; }
+		constexpr static std::size_t available_after_compact() noexcept { return 0; }
+		constexpr static bool compact(auto) noexcept { return false; }
+		constexpr static std::span<const slot_type> view() noexcept { return {}; }
+		constexpr static byte_span get_slot(std::size_t) noexcept { return {}; }
+    };
 
     template <std::size_t AlignV = 4>
     using fixed_directory_view = directory_view<directory_type::fixed, AlignV>;
@@ -786,6 +811,7 @@ namespace fulla::page::slots {
 
     static_assert(SlotDirectoryConcept<fixed_directory_view<>>);
     static_assert(SlotDirectoryConcept<variadic_directory_view<>>);
+    static_assert(SlotDirectoryConcept<empty_directory_view>);
 
     template <typename DirDst, typename DirSrc>
     inline std::size_t merge_need_bytes(const DirDst& dst, const DirSrc& src) {

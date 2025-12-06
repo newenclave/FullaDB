@@ -170,7 +170,7 @@ namespace fulla::bpt {
             const value_type& deref() const {
                 if (!cache_) {
                     auto leaf = tree_->model_.get_accessor().load_leaf(leaf_id_);
-                    assert(leaf.is_valid() && "Something went wrong. leaf is not valid");
+                    DB_ASSERT(leaf.is_valid(), "Something went wrong. leaf is not valid");
                     cache_.emplace(leaf.get_key(idx_), leaf.get_value(idx_));
                 }
                 return *cache_;
@@ -486,9 +486,6 @@ namespace fulla::bpt {
                 right.set_parent(node.get_parent());
 
                 for (std::size_t id = middle_element + 1; id < node.size(); ++id) {
-                    if (id == 33) {
-                        std::cout << "";
-                    }
                     auto borrow_key = node.borrow_key(id);
                     auto next_child = node.get_child(id);
                     visit_node([&](auto& cnode) { cnode.set_parent(right.self()); }, next_child);
