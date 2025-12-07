@@ -589,7 +589,7 @@ namespace fulla::bpt::paged {
                 if (new_page.is_valid()) {
                     auto pv = page_view_type{ new_page.rw_span() };
                     const auto page_id = new_page.pid();
-                    pv.header().init(page::page_kind::bpt_leaf, mgr_.page_size(), page_id, sizeof(page::bpt_leaf_header));
+                    pv.header().init(sett_.leaf_kind_value, mgr_.page_size(), page_id, sizeof(page::bpt_leaf_header));
                     pv.get_slots_dir().init();
                     auto subhdr = pv.subheader<page::bpt_leaf_header>();
                     subhdr->init();
@@ -615,7 +615,7 @@ namespace fulla::bpt::paged {
                 if (new_page.is_valid()) {
                     auto pv = page_view_type{ new_page.rw_span() };
                     const auto page_id = new_page.pid();
-                    pv.header().init(page::page_kind::bpt_inode, mgr_.page_size(), page_id, sizeof(page::bpt_inode_header));
+                    pv.header().init(sett_.inode_kind_value, mgr_.page_size(), page_id, sizeof(page::bpt_inode_header));
                     pv.get_slots_dir().init();
                     auto subhdr = pv.subheader<page::bpt_inode_header>();
                     subhdr->init();
@@ -645,7 +645,7 @@ namespace fulla::bpt::paged {
                     auto data = new_page.rw_span();
                     auto pv = page_view_type{ data };
                     const auto kind = pv.header().kind.get();
-                    if (kind == static_cast<std::uint16_t>(page::page_kind::bpt_leaf)) {
+                    if (kind == static_cast<std::uint16_t>(sett_.leaf_kind_value)) {
                         return leaf_type{ pv, page_id, 
                             std::move(new_page),
                             sett_.leaf_minimum_slot_size,
@@ -663,7 +663,7 @@ namespace fulla::bpt::paged {
                     auto data = new_page.rw_span();
                     auto pv = page_view_type{ data };
                     const auto kind = pv.header().kind.get();
-                    if (kind == static_cast<std::uint16_t>(page::page_kind::bpt_inode)) {
+                    if (kind == static_cast<std::uint16_t>(sett_.inode_kind_value)) {
                         return inode_type{ pv, page_id, 
                             std::move(new_page),
                             sett_.inode_minimum_slot_size,
@@ -727,7 +727,7 @@ namespace fulla::bpt::paged {
                 auto page = mgr_.fetch(id);
                 if (page.is_valid()) {
                     auto pv = page_view_type{ page.rw_span() };
-                    pv.header().init(page::page_kind::undefined, pv.size(), id, sizeof(page::freed));
+                    pv.header().init(core::word_u16::max(), pv.size(), id, sizeof(page::freed));
                     auto *fh = pv.subheader<page::freed>();
                     fh->init();
                     fh->next = first_freed_;
@@ -741,7 +741,7 @@ namespace fulla::bpt::paged {
                 if (!first_node.is_valid()) {
                     first_node = mgr_.create();
                     auto pv = page_view_type{ first_node.rw_span() };
-                    pv.header().init(page::page_kind::bpt_root, mgr_.page_size(), 0, sizeof(page::bpt_root));
+                    pv.header().init(sett_.root_kind_value, mgr_.page_size(), 0, sizeof(page::bpt_root));
                     auto rh = pv.subheader<page::bpt_root>();
                     rh->root = invalid_node_value;
                     first_node.mark_dirty();

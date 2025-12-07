@@ -30,6 +30,26 @@ namespace {
 		auto p = fs::temp_directory_path() / (std::string(stem) + "_" + std::to_string(rd()) + ".bin");
 		return p;
 	}
+	
+	std::size_t get_random_value(std::size_t min, std::size_t max) {
+		static std::random_device rd;
+		static std::mt19937 gen(rd());
+		std::uniform_int_distribution<std::size_t> len_dist(min, max);
+
+		return len_dist(gen);
+	}
+
+	core::byte_view get_view(const std::string& str, std::size_t from, std::size_t len) {
+		const auto begin = str.data() + from;
+		const auto end = std::min(len, str.size() - from);
+		return { reinterpret_cast<const core::byte*>(begin), end };
+	}
+
+	core::byte_span get_span(std::string& str, std::size_t from, std::size_t len) {
+		const auto begin = str.data() + from;
+		const auto end = std::min(len, str.size() - from);
+		return { reinterpret_cast<core::byte*>(begin), end };
+	}
 
 	std::string get_random_string(std::size_t min_len, std::size_t max_len = 20) {
 		static std::random_device rd;
@@ -60,6 +80,17 @@ namespace {
 
 	auto to_byte_ptr(std::string& str) {
 		return reinterpret_cast<core::byte*>(str.data());
+	}
+	
+	template <typename ConT1, typename ConT2>
+	bool compare(const ConT1& a, const ConT2& b) {
+		return std::is_eq(std::lexicographical_compare_three_way(
+			std::begin(a), std::end(a),
+			std::begin(b), std::end(b), 
+			[](auto lhs, auto rhs) { 
+				return core::byte(lhs) <=> core::byte(rhs); 
+			}
+		));
 	}
 
 	constexpr static const auto DEFAULT_BUFFER_SIZE = 4096UL;
@@ -189,5 +220,54 @@ TEST_SUITE("long_store in work") {
 		CHECK_EQ(test_result_2, new_string_0);
 		CHECK_EQ(test_result_3, new_string_1);
 
+		CHECK(lsh1.read(to_byte_ptr(test_result_3), test_result_3.size()) == 0);
+	}
+
+	TEST_CASE("read and write from ranbom position") {
+		device_type dev{ 256 };
+
+		buffer_manager_type buf_mgr{ dev, 4 };
+		long_store_handle lsh{ buf_mgr, long_store_handle::invalid_pid };
+		REQUIRE(lsh.create());
+
+		auto long_random_string = get_random_string(50000, 100000);
+
+		REQUIRE(lsh.write(to_cbyte_ptr(long_random_string), long_random_string.size()) == long_random_string.size());
+
+		for (int i = 0; i < 100; ++i) {
+			const auto pos = get_random_value(0, long_random_string.size());
+			const auto len = get_random_value(0, long_random_string.size());
+			const auto view = get_view(long_random_string, pos, len);
+			std::string res(len, '\0');
+			lsh.seekg(pos);
+			const auto res_len = lsh.read(to_byte_ptr(res), len);
+			REQUIRE(res_len <= len);
+			res.resize(res_len);
+			CHECK(compare(res, view));
+		}
+
+		const auto check_data = [&](const std::string& expected) {
+			auto tmp = std::string(expected.size(), '\0');
+			lsh.seekg(0);
+			CHECK(lsh.read(to_byte_ptr(tmp), tmp.size()) == tmp.size());
+			CHECK(tmp == expected);
+		};
+
+		auto expected = long_random_string;
+
+		for (int i = 0; i < 100; ++i) {
+			const auto pos = get_random_value(0, expected.size());
+			const auto len = get_random_value(0, expected.size());
+			const auto span = get_span(expected, pos, len);
+			std::string res(len, '\0');
+
+			const auto tmp = get_random_string(span.size(), span.size());
+			std::memcpy(span.data(), tmp.data(), span.size());
+			lsh.seekp(pos);
+			REQUIRE(lsh.write(to_cbyte_ptr(tmp.data()), tmp.size()) == span.size());
+			check_data(expected);
+		}
+
+		CHECK(lsh.size() == long_random_string.size());
 	}
 }

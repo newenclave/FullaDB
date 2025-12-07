@@ -39,7 +39,7 @@ namespace {
 	byte_buffer make_leaf_page(std::size_t size) {
 		byte_buffer result(size);
 		auto pv = page_view_type{ result };
-		pv.header().init(fulla::page::page_kind::bpt_leaf, size, 1, sizeof(fulla::page::bpt_leaf_header));
+		pv.header().init(static_cast<std::uint16_t>(fulla::page::page_kind::bpt_leaf), size, 1, sizeof(fulla::page::bpt_leaf_header));
 		auto sh = pv.subheader<fulla::page::bpt_leaf_header>();
 		sh->init();
 		sh->next = sh->prev = model_type::invalid_node_value;

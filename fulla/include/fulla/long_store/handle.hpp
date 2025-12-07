@@ -20,9 +20,20 @@
 
 namespace fulla::long_store {
 
-	template <storage::RandomAccessDevice DeviceT, typename PidT = std::uint32_t>	
+	template <storage::RandomAccessDevice DeviceT, typename PidT = std::uint32_t,
+		std::uint16_t HeaderKindValue = 0, std::uint16_t ChunkKindValue =  1
+	>	
 	class handle {
+
+		struct page_iterator;
+
 	public:
+
+		constexpr static const std::uint16_t header_kind_value = HeaderKindValue;
+		constexpr static const std::uint16_t chunk_kind_value = ChunkKindValue;
+
+		static_assert(header_kind_value != chunk_kind_value, "values must not be equal");
+
 		using device_type = DeviceT;
 		using pid_type = PidT;
 		using buffer_manager_type = storage::buffer_manager<device_type, pid_type>;
@@ -117,20 +128,36 @@ namespace fulla::long_store {
 				return 0;
 			}
 			auto it = iterator_from(spage_, spos_);
+			return write_impl(it, buf, len);
+		}
+
+		std::size_t read(core::byte* buf, std::size_t len) {
+			if (!is_open() || (buf == nullptr) || (len == 0)) {
+				return 0;
+			}
+			auto it = iterator_from(gpage_, gpos_);
+			return read_impl(it, buf, len);
+		}
+
+	//private:
+
+		std::size_t write_impl(page_iterator it, const core::byte* buf, std::size_t len) {
 			auto hdr = load_header();
 			if (!hdr.is_valid()) {
 				return 0;
 			}
-			const auto total_written = traverse_pages(it, len, true, 
-				[&buf, &len, &hdr, this](auto &it) -> std::size_t {
+			const auto total_written = traverse_pages(it, len, true,
+				[&buf, &len, &hdr, this](auto& it) -> std::size_t {
 					const auto current_size = it.get_size();
 					const auto current_cap = it.capacity_in_current();
 					const auto available = (current_cap - it.offset_in_page);
 					const auto target_size = (it.offset_in_page + (len < available ? len : available));
 
 					const auto written = it.write({ buf, len });
-					it.set_size(target_size);
-					hdr.add_total_size(target_size - current_size);
+					if (target_size > current_size) {
+						it.set_size(target_size);
+						hdr.add_total_size(target_size - current_size);
+					}
 					it.offset_in_page = target_size;
 
 					spage_ = it.current_pid;
@@ -144,14 +171,10 @@ namespace fulla::long_store {
 			return total_written;
 		}
 
-		std::size_t read(core::byte* buf, std::size_t len) {
-			if (!is_open() || (buf == nullptr) || (len == 0)) {
-				return 0;
-			}
-			auto it = iterator_from(gpage_, gpos_);
+		std::size_t read_impl(page_iterator it, core::byte* buf, std::size_t len) {
 			const auto total_read = traverse_pages(it, len, false,
-				[&buf, &len, this](auto &it) -> std::size_t {
-					const auto available = (it.get_size() - it.offset_in_page);
+				[&buf, &len, this](auto& it) -> std::size_t {
+					const auto available = it.readable_bytes();
 					const auto target_size = (it.offset_in_page + std::min(len, available));
 					const auto read = it.read({ buf, len });
 					it.offset_in_page = target_size;
@@ -161,11 +184,9 @@ namespace fulla::long_store {
 					len -= read;
 					return read;
 				}
-			);	
+			);
 			return total_read;
 		}
-
-	//private:
 
 		void dump_pages() {
 			auto hdr = load_header();
@@ -442,7 +463,7 @@ namespace fulla::long_store {
 				page.mark_dirty();
 			}
 
-			std::size_t available_in_current() {
+			std::size_t writable_capacity() {
 				auto pv = get_page();
 				if (std::holds_alternative<header_handle>(pv)) {
 					const auto h = std::get<header_handle>(pv);
@@ -451,6 +472,21 @@ namespace fulla::long_store {
 				else if (std::holds_alternative<chunk_handle>(pv)) {
 					const auto c = std::get<chunk_handle>(pv);
 					return c.capacity() - offset_in_page;
+				}
+				return 0;
+			}
+
+			std::size_t readable_bytes() {
+				auto pv = get_page();
+				if (std::holds_alternative<header_handle>(pv)) {
+					const auto h = std::get<header_handle>(pv);
+					DB_ASSERT(h.capacity() >= h.size(), "Something went wrong");
+					return std::min(h.capacity(), h.size()) - offset_in_page;
+				}
+				else if (std::holds_alternative<chunk_handle>(pv)) {
+					const auto c = std::get<chunk_handle>(pv);
+					DB_ASSERT(c.capacity() >= c.size(), "Something went wrong");
+					return std::min(c.capacity(), c.size()) - offset_in_page;
 				}
 				return 0;
 			}
@@ -564,7 +600,7 @@ namespace fulla::long_store {
 			std::size_t remaining = target_offset;
 
 			while (it.is_valid() && remaining > 0) {
-				const auto available = it.available_in_current();
+				const auto available = it.writable_capacity();
 
 				if (remaining < available) {
 					it.offset_in_page += remaining;
@@ -588,16 +624,16 @@ namespace fulla::long_store {
 
 			const auto current_total = header.total_size();
 			if (target_offset <= current_total) {
-				return iterator_at(target_offset);
+				return last_iterator();
 			}
 
-			std::size_t needed = target_offset - current_total;
+			std::size_t needed = (target_offset - current_total);
 
 			auto it = last_iterator();
 
 			it.offset_in_page = it.get_size();
-			const auto last_available = it.available_in_current();
-			if (it.available_in_current() > 0) {
+			const auto last_available = it.writable_capacity();
+			if (last_available > 0) {
 				if (needed < last_available) {
 					it.set_size(it.get_size() + needed);
 					it.offset_in_page = it.get_size();
@@ -613,7 +649,7 @@ namespace fulla::long_store {
 			}
 
 			while (needed > 0) {
-				const auto capacity = it.available_in_current();
+				const auto capacity = it.writable_capacity();
 				if (capacity > 0) {
 					const auto to_add = std::min(capacity, needed);
 
@@ -649,7 +685,7 @@ namespace fulla::long_store {
 
 		bool expand_current_or_create_next(page_iterator& it, std::size_t needed) {
 			const auto capacity = it.capacity_in_current();
-			const auto available = it.available_in_current();
+			const auto available = it.writable_capacity();
 			const auto can_expand = capacity - available;
 
 			if (can_expand > 0) {
@@ -692,7 +728,7 @@ namespace fulla::long_store {
 
 			while (remaining > 0 && it.is_valid()) {
 				auto pv = it.get_page();
-				const auto available = it.available_in_current();
+				const auto available = it.writable_capacity();
 				const auto to_process = (available < remaining) ? available : remaining;
 
 				if (to_process == 0) {
@@ -714,7 +750,10 @@ namespace fulla::long_store {
 					break;
 				}
 
-				if ((remaining > 0) && (it.offset_in_page >= it.available_in_current())) {
+
+				const auto available_for_operation = allow_expand ? it.writable_capacity() : it.readable_bytes();
+
+				if ((remaining > 0) && (it.offset_in_page >= available_for_operation)) {
 					if (!it.advance_to_next()) {
 						if (!allow_expand) {
 							break;
@@ -780,10 +819,10 @@ namespace fulla::long_store {
 			auto ph = mgr_->fetch(pid);
 			if (ph.is_valid()) {
 				cpage_view_type pv{ ph.ro_span() };
-				if (pv.header().kind.get() == static_cast<std::uint16_t>(page::page_kind::long_store_head)) {
+				if (pv.header().kind.get() == header_kind_value) {
 					return { header_handle{ph} };
 				}
-				else if (pv.header().kind.get() == static_cast<std::uint16_t>(page::page_kind::long_store_chunk)) {
+				else if (pv.header().kind.get() == chunk_kind_value) {
 					return { chunk_handle{ph} };
 				}
 			}
@@ -884,7 +923,7 @@ namespace fulla::long_store {
 			auto ph = mgr_->create(true);
 			header_page_ = ph.pid();
 			page_view_type pv{ ph.rw_span() };
-			pv.header().init(page::page_kind::long_store_head, mgr_->block_size(), ph.pid(), sizeof(header_type));
+			pv.header().init(header_kind_value, mgr_->block_size(), ph.pid(), sizeof(header_type));
 			pv.get_slots_dir().init();
 			auto* sh = pv.subheader<header_type>();
 			sh->total_size = 0;
@@ -897,7 +936,7 @@ namespace fulla::long_store {
 		auto create_chunk() {
 			auto ph = mgr_->create(true);
 			page_view_type pv{ ph.rw_span() };
-			pv.header().init(page::page_kind::long_store_chunk, mgr_->block_size(), ph.pid(), sizeof(chunk_type));
+			pv.header().init(chunk_kind_value, mgr_->block_size(), ph.pid(), sizeof(chunk_type));
 			pv.get_slots_dir().init();
 			auto* sh = pv.subheader<chunk_type>();
 			sh->data.size = 0;

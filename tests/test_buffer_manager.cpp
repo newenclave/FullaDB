@@ -42,7 +42,7 @@ TEST_SUITE("storage/buffer_manager") {
             {
                 auto pg = ph.rw_span();
                 auto* hdr = reinterpret_cast<page_header*>(pg.data());
-                hdr->init(page_kind::heap, 1024, /*self*/0);
+                hdr->init(static_cast<std::uint16_t>(page_kind::heap), 1024, /*self*/0);
             }
             ph.reset(); // unpin
 

@@ -17,7 +17,7 @@ namespace {
     static std::vector<byte> make_blank_page(std::size_t ps, std::size_t subhdr_size = 4) {
         std::vector<byte> buf(ps);
         auto* hdr = reinterpret_cast<page_header*>(buf.data());
-        hdr->init(page_kind::heap, static_cast<std::uint32_t>(ps), 1, subhdr_size);
+        hdr->init(static_cast<std::uint16_t>(page_kind::heap), static_cast<std::uint32_t>(ps), 1, subhdr_size);
         return buf;
     }
 

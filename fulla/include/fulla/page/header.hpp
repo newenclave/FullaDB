@@ -46,7 +46,7 @@ namespace fulla::page {
         word_u32 crc {0};          // reserved: page checksum
 
         // Initialize header fields for a fresh page buffer.
-        void init(page_kind k, std::size_t page_size, std::uint32_t self, std::size_t subheader_size = 0) {
+        void init(word_u16::word_type k, std::size_t page_size, std::uint32_t self, std::size_t subheader_size = 0) {
             kind = static_cast<word_u16::word_type>(k);
             self_pid = self;
             reserved = 0;

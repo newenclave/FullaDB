@@ -20,7 +20,7 @@ namespace {
     core::byte_buffer make_inode_page(std::size_t size) {
         core::byte_buffer result(size);
         page::page_view<slot_dir_type> pv(result);
-        pv.header().init(page::page_kind::bpt_inode, size, 1, sizeof(page::bpt_inode_header));
+        pv.header().init(static_cast<std::uint16_t>(page::page_kind::bpt_inode), size, 1, sizeof(page::bpt_inode_header));
         pv.subheader<page::bpt_inode_header>()->init();
         pv.get_slots_dir().init();
         return result;

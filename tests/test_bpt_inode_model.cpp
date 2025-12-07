@@ -27,7 +27,7 @@ namespace {
 	byte_buffer make_inode_page(std::size_t size) {
 		byte_buffer result(size);
 		auto pv = page_view_type{ result };
-		pv.header().init(fulla::page::page_kind::bpt_inode, size, 1, sizeof(fulla::page::bpt_inode_header));
+		pv.header().init(static_cast<std::uint16_t>(fulla::page::page_kind::bpt_inode), size, 1, sizeof(fulla::page::bpt_inode_header));
 		auto sh = pv.subheader<fulla::page::bpt_inode_header>();
 		sh->init();
 		sh->rightmost_child = model_type::invalid_node_value;
