@@ -123,6 +123,14 @@ namespace fulla::long_store {
 			spos_ = pos.offset;
 		}
 
+		std::size_t append(const core::byte* buf, std::size_t len) {
+			if (!is_open() || (buf == nullptr) || (len == 0)) {
+				return 0;
+			}
+			auto it = last_iterator();
+			return write_impl(it, buf, len);
+		}
+
 		std::size_t write(const core::byte* buf, std::size_t len) {
 			if (!is_open() || (buf == nullptr) || (len == 0)) {
 				return 0;
