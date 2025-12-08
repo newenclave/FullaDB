@@ -17,7 +17,7 @@
 #include <atomic>
 
 #include "fulla/core/bytes.hpp"
-#include "fulla/core/assert.hpp"
+#include "fulla/core/debug.hpp"
 #include "fulla/storage/device.hpp" // RandomAccessDevice, position_type
 #include "fulla/storage/block_device.hpp" // RandomAccessBlockDevice, position_type
 #include "fulla/storage/stats.hpp"  // stats / null_stats

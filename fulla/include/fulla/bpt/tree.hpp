@@ -13,7 +13,7 @@
 #include <sstream>
 #include <cassert>
 
-#include "fulla/core/assert.hpp"
+#include "fulla/core/debug.hpp"
 #include "fulla/bpt/concepts.hpp"
 #include "fulla/bpt/policies.hpp"
 #include "fulla/bpt/cursor.hpp"

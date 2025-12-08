@@ -10,13 +10,19 @@
 
 #include <variant>
 
-#include "fulla/core/assert.hpp"
+#include "fulla/core/debug.hpp"
 
 #include "fulla/page/header.hpp"
 #include "fulla/page/page_view.hpp"
 #include "fulla/page/long_store.hpp"
 #include "fulla/storage/block_device.hpp"
 #include "fulla/storage/buffer_manager.hpp"
+
+#ifdef ENABLE_PRIVATE_TESTS
+#define PRIVATE_TESTABLE public
+#else
+#define PRIVATE_TESTABLE private
+#endif
 
 namespace fulla::long_store {
 
@@ -72,7 +78,11 @@ namespace fulla::long_store {
 		{}
 
 		bool is_open() const noexcept {
-			return (mgr_ != nullptr) && (header_page_ != invalid_pid);
+			return (mgr_ != nullptr) && is_valid_pid(header_page_);
+		}
+
+		bool is_valid_pid(pid_type pid) const noexcept {
+			return (mgr_ != nullptr) && mgr_->valid_pid(pid);
 		}
 
 		std::size_t size() {
@@ -85,14 +95,14 @@ namespace fulla::long_store {
 			return 0;
 		}
 
-		bool create() {
+		pid_type create() {
 			if (header_page_ == invalid_pid) {
 				auto ph = create_header();
 				header_page_ = ph.pid();
 				gpage_ = spage_ = header_page_;
-				return ph.is_valid();
+				return ph.pid();
 			}
-			return false;
+			return invalid_pid;
 		}
 		
 		position_type tellg() const {
@@ -147,7 +157,82 @@ namespace fulla::long_store {
 			return read_impl(it, buf, len);
 		}
 
-	//private:
+		bool resize(std::size_t size) {
+			auto hdr = load_header();
+			if (!hdr.is_valid()) {
+				return false;
+			}
+			const auto current_size = static_cast<std::size_t>(hdr.total_size());
+			if (current_size == size) {
+				return true;
+			} else if (current_size < size) {
+				auto new_itr = expand_to(size);
+				return new_itr.is_valid();
+			}
+			else {
+				return truncate(size);
+			}
+		}
+
+		std::size_t position_from_page_offset(position_type pos) const {
+			return position_from_page_offset(pos.page_id, pos.offset);
+		}
+
+		std::size_t available() const {
+			auto hdr = load_header();
+			if (hdr.is_valid()) {
+				auto current = position_from_page_offset(gpage_, gpos_);
+				auto total = hdr.total_size();
+				return (current < total) ? (total - current) : 0;
+			}
+			return 0;
+		}
+
+	PRIVATE_TESTABLE:
+
+		bool truncate(std::size_t size) {
+			auto hdr = load_header();
+			if (!hdr.is_valid()) {
+				return false;
+			}
+
+			const auto current_size = static_cast<std::size_t>(hdr.total_size());
+			if (size > current_size) {
+				return false;
+			}
+			auto reduce_size = current_size - size;
+
+			auto last_page = fetch(hdr.get_last());
+			while (reduce_size > 0) {
+				if (std::holds_alternative<header_handle>(last_page)) {
+					auto& hdr_crt = std::get<header_handle>(last_page);
+					const auto csize = hdr.get_size();
+					DB_ASSERT(hdr_crt.pid() == hdr.pid(), "Something went wrong!");
+					DB_ASSERT(csize >= reduce_size, "Something went wrong!");
+					hdr_crt.set_size(csize - reduce_size);
+					hdr_crt.dec_total_size(reduce_size);
+					reduce_size = 0;
+				}
+				else if (std::holds_alternative<chunk_handle>(last_page)) {
+					auto& chk = std::get<chunk_handle>(last_page);
+					const auto prev = chk.get_prev();
+					const auto csize = chk.get_size();
+					if (csize > reduce_size) {
+						chk.set_size(csize - reduce_size);
+						hdr.dec_total_size(reduce_size);
+						reduce_size = 0;
+					}
+					else {
+						remove_page(chk.pid());
+						reduce_size -= csize;
+						hdr.dec_total_size(csize);
+						hdr.set_last(prev);
+					}
+					last_page = fetch(prev);
+				}
+			}
+			return reduce_size == 0;
+		}
 
 		std::size_t write_impl(page_iterator it, const core::byte* buf, std::size_t len) {
 			auto hdr = load_header();
@@ -164,7 +249,7 @@ namespace fulla::long_store {
 					const auto written = it.write({ buf, len });
 					if (target_size > current_size) {
 						it.set_size(target_size);
-						hdr.add_total_size(target_size - current_size);
+						hdr.inc_total_size(target_size - current_size);
 					}
 					it.offset_in_page = target_size;
 
@@ -335,7 +420,7 @@ namespace fulla::long_store {
 				return static_cast<std::size_t>(header().total_size);
 			}
 
-			void add_total_size(std::size_t val) {
+			void inc_total_size(std::size_t val) {
 				header().total_size = static_cast<core::word_u32::word_type>(static_cast<std::size_t>(header().total_size) + val);
 			}
 
@@ -463,7 +548,7 @@ namespace fulla::long_store {
 			void mark_dirty() {
 				auto ph = owner->mgr_->fetch(current_pid);
 				if (ph.is_valid()) {
-					mark_dirty();
+					mark_dirty(ph);
 				}
 			}
 
@@ -577,7 +662,51 @@ namespace fulla::long_store {
 				}
 				return false;
 			}
+
+			bool advance_to_prev() {
+				auto pv = get_page();
+				if (std::holds_alternative<header_handle>(pv)) {
+					auto h = std::get<header_handle>(pv);
+					current_pid = invalid_pid;
+					offset_in_page = 0;
+					return false;
+				}
+				else if (std::holds_alternative<chunk_handle>(pv)) {
+					auto c = std::get<chunk_handle>(pv);
+					current_pid = c.get_prev();
+					offset_in_page = 0;
+					return current_pid != invalid_pid;
+				}
+				return false;
+			}
 		};
+
+		std::size_t position_from_page_offset(pid_type page_id, std::size_t offset) const {
+			if (page_id == invalid_pid) {
+				return 0;
+			}
+
+			std::size_t pos = 0;
+			auto current = header_page_;
+
+			while ((current != invalid_pid) && (current != page_id)) {
+				auto pv = const_cast<handle*>(this)->fetch(current);
+				if (std::holds_alternative<header_handle>(pv)) {
+					auto h = std::get<header_handle>(pv);
+					pos += h.get_size();
+					current = h.get_next();
+				}
+				else if (std::holds_alternative<chunk_handle>(pv)) {
+					auto c = std::get<chunk_handle>(pv);
+					pos += c.get_size();
+					current = c.get_next();
+				}
+				else {
+					break;
+				}
+			}
+			return pos + offset;
+		}
 
 		page_iterator last_iterator() {
 			auto header = load_header();
@@ -645,12 +774,12 @@ namespace fulla::long_store {
 				if (needed < last_available) {
 					it.set_size(it.get_size() + needed);
 					it.offset_in_page = it.get_size();
-					header.add_total_size(needed);
+					header.inc_total_size(needed);
 					return it;
 				}
 				else {
 					needed -= last_available;
-					header.add_total_size(last_available);
+					header.inc_total_size(last_available);
 					it.set_size(it.get_size() + last_available);
 					it.offset_in_page = it.get_size();
 				}
@@ -665,12 +794,12 @@ namespace fulla::long_store {
 					if (std::holds_alternative<header_handle>(pv)) {
 						auto h = std::get<header_handle>(pv);
 						h.set_size(h.get_size() + to_add);
-						h.add_total_size(to_add);
+						h.inc_total_size(to_add);
 					}
 					else if (std::holds_alternative<chunk_handle>(pv)) {
 						auto c = std::get<chunk_handle>(pv);
 						c.set_size(c.get_size() + to_add);
-						header.add_total_size(to_add);
+						header.inc_total_size(to_add);
 					}
 
 					needed -= to_add;
@@ -703,13 +832,13 @@ namespace fulla::long_store {
 				if (std::holds_alternative<header_handle>(pv)) {
 					auto h = std::get<header_handle>(pv);
 					h.set_size(h.get_size() + to_add);
-					h.add_total_size(to_add);
+					h.inc_total_size(to_add);
 				}
 				else if (std::holds_alternative<chunk_handle>(pv)) {
 					auto c = std::get<chunk_handle>(pv);
 					c.set_size(c.get_size() + to_add);
 					auto header = load_header();
-					header.add_total_size(to_add);
+					header.inc_total_size(to_add);
 				}
 				return true;
 			}
@@ -783,7 +912,7 @@ namespace fulla::long_store {
 
 		bool remove_page(pid_type pid) {
 			auto pv = fetch(pid);
-			if (pv.holds_alternative<header_handle>()) {
+			if (std::holds_alternative<header_handle>(pv)) {
 				/// think about header removal
 				auto head = std::get<header_handle>(pv);
 				if (head.get_next() != invalid_pid) {
@@ -791,8 +920,9 @@ namespace fulla::long_store {
 					head.set_last(invalid_pid);
 					head.set_size(0);
 				}
+				return true;
 			}
-			else if (pv.holds_alternative<chunk_handle>()) {
+			else if (std::holds_alternative<chunk_handle>(pv)) {
 				auto chunk = std::get<chunk_handle>(pv);
 				auto next = chunk.get_next();
 				auto prev = chunk.get_prev();
@@ -804,12 +934,12 @@ namespace fulla::long_store {
 				}
 				if (prev != invalid_pid) {
 					auto prev_page = fetch(prev);
-					if (prev_page.holds_alternative<header_handle>()) {
-						auto header = std::get<header_handle>(prev_page);
+					if (std::holds_alternative<header_handle>(prev_page)) {
+						auto &header = std::get<header_handle>(prev_page);
 						header.set_next(next);
 					}
-					else if (prev_page.holds_alternative<chunk_handle>()) {
-						auto prev_chunk = std::get<chunk_handle>(prev_page);
+					else if (std::holds_alternative<chunk_handle>(prev_page)) {
+						auto &prev_chunk = std::get<chunk_handle>(prev_page);
 						prev_chunk.set_next(next);
 					}
 				}
@@ -819,6 +949,7 @@ namespace fulla::long_store {
 						header_page.set_last(prev);
 					}
 				}
+				return true;
 			}
 			return false;
 		}
@@ -837,7 +968,7 @@ namespace fulla::long_store {
 			return { none_handle{} };
 		}
 
-		header_handle load_header() {
+		header_handle load_header() const {
 			if (is_open()) {
 				auto ph = mgr_->fetch(header_page_);
 				if (ph.is_valid()) {
@@ -847,7 +978,7 @@ namespace fulla::long_store {
 			return {};
 		}
 
-		chunk_handle load_chunk(pid_type pid) {
+		chunk_handle load_chunk(pid_type pid) const {
 			if (is_open()) {
 				auto ph = mgr_->fetch(pid);
 				if (ph.is_valid()) {
@@ -855,76 +986,6 @@ namespace fulla::long_store {
 				}
 			}
 			return {};
-		}
-
-		position_type read_data(core::byte* ptr, std::size_t len) {
-			auto header = load_header();
-			if (header.is_valid()) {
-				if (header.get_size() >= len) {
-					
-				}
-			}
-			return { invalid_pid, 0 };
-		}
-
-		position_type jump_to_position(std::size_t offset) {
-			auto header = load_header();
-			if (header.is_valid()) {
-
-				if (header.get_size() >= offset) {
-					return { header_page_, offset };
-				}
-				else if (header.capacity() >= offset) {
-					header.set_size(offset);
-					header.set_total_size(offset);
-					return { header_page_, offset };
-				}
-				else {
-					offset = (offset - header.get_size());
-				}
-				pid_type current_page = header.get_next();
-				while (offset > 0) {
-					auto chunk = load_chunk(current_page);
-					if (chunk.is_valid()) {
-						if (chunk.get_size() > offset) {
-							return { current_page, offset };
-						}
-						else if (chunk.capacity() >= offset) {
-							header.add_total_size(offset - chunk.get_size());
-							chunk.set_size(offset);
-							return { current_page, offset };
-						}
-						else {
-							offset = (offset - chunk.get_size());
-							current_page = chunk.get_next();
-						}
-					}
-					else {
-						// need to create more chunks
-						auto new_chunk = create_chunk();
-						if (new_chunk.is_valid()) {
-							if (new_chunk.available() >= offset) {
-								const auto size = offset;
-								new_chunk.set_size(offset);
-								header.add_total_size(offset);
-								offset = 0;
-								return { new_chunk.pid(), size};
-							}
-							else {
-								const auto full_available = new_chunk.available();
-								offset = (offset - full_available);
-								header.add_total_size(full_available);
-								new_chunk.set_size(full_available);
-							}
-							current_page = invalid_pid;
-						}
-						else {
-							return { invalid_pid, 0 };
-						}
-					}
-				}
-			}
-			return { invalid_pid, 0 };
 		}
 
 		auto create_header() {
@@ -971,7 +1032,7 @@ namespace fulla::long_store {
 			return chunk_handle{ ph };
 		}
 
-		buffer_manager_type *mgr_ = nullptr;
+		buffer_manager_type mutable *mgr_ = nullptr;
 		pid_type header_page_ = invalid_pid;
 		pid_type gpage_ = invalid_pid;
 		pid_type spage_ = invalid_pid;

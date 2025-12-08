@@ -94,6 +94,13 @@ namespace {
 		));
 	}
 
+	void check_data(auto &lsh, const auto& expected) {
+		auto tmp = std::string(expected.size(), '\0');
+		lsh.seekg(0);
+		CHECK(lsh.read(to_byte_ptr(tmp), tmp.size()) == tmp.size());
+		CHECK(compare(tmp, expected));
+	};
+
 	constexpr static const auto DEFAULT_BUFFER_SIZE = 4096UL;
 
 }
@@ -113,8 +120,8 @@ TEST_SUITE("long_store in work") {
 		REQUIRE(!lsh.is_open());
 		REQUIRE(lsh.size() == 0);
 
-		const bool created = lsh.create();
-		CHECK(created);
+		const auto created = lsh.create();
+		CHECK(lsh.is_valid_pid(created));
 
 		REQUIRE(lsh.is_open());
 		REQUIRE(lsh.size() == 0);
@@ -151,10 +158,10 @@ TEST_SUITE("long_store in work") {
 		REQUIRE(lsh0.size() == 0);
 		REQUIRE(!lsh1.is_open());
 		REQUIRE(lsh1.size() == 0);
-		const bool created0 = lsh0.create();
-		const bool created1 = lsh1.create();
-		CHECK(created0);
-		CHECK(created1);
+		const auto created0 = lsh0.create();
+		const auto created1 = lsh1.create();
+		CHECK(lsh0.is_valid_pid(created0));
+		CHECK(lsh1.is_valid_pid(created1));
 
 		auto test_data_0 = get_random_string(10000, 20000);
 		auto test_data_1 = get_random_string(5000, 6000);
@@ -229,7 +236,7 @@ TEST_SUITE("long_store in work") {
 
 		buffer_manager_type buf_mgr{ dev, 4 };
 		long_store_handle lsh{ buf_mgr, long_store_handle::invalid_pid };
-		REQUIRE(lsh.create());
+		REQUIRE(lsh.is_valid_pid(lsh.create()));
 
 		auto long_random_string = get_random_string(50000, 100000);
 
@@ -247,13 +254,6 @@ TEST_SUITE("long_store in work") {
 			CHECK(compare(res, view));
 		}
 
-		const auto check_data = [&](const std::string& expected) {
-			auto tmp = std::string(expected.size(), '\0');
-			lsh.seekg(0);
-			CHECK(lsh.read(to_byte_ptr(tmp), tmp.size()) == tmp.size());
-			CHECK(tmp == expected);
-		};
-
 		auto expected = long_random_string;
 
 		for (int i = 0; i < 100; ++i) {
@@ -266,9 +266,32 @@ TEST_SUITE("long_store in work") {
 			std::memcpy(span.data(), tmp.data(), span.size());
 			lsh.seekp(pos);
 			REQUIRE(lsh.write(to_cbyte_ptr(tmp.data()), tmp.size()) == span.size());
-			check_data(expected);
+			check_data(lsh, expected);
 		}
 
 		CHECK(lsh.size() == long_random_string.size());
+	}
+
+	TEST_CASE("resize test") {
+		device_type dev{ 256 };
+
+		buffer_manager_type buf_mgr{ dev, 4 };
+		long_store_handle lsh{ buf_mgr, long_store_handle::invalid_pid };
+		REQUIRE(lsh.is_valid_pid(lsh.create()));
+
+		auto long_random_string = get_random_string(50000, 100000);
+		REQUIRE(lsh.write(to_cbyte_ptr(long_random_string), long_random_string.size()) == long_random_string.size());
+		const auto original_size = lsh.size();
+		const auto new_random_size = get_random_value(0, original_size);
+		CHECK(lsh.resize(new_random_size));
+		CHECK(lsh.size() == new_random_size);
+		const auto view = get_view(long_random_string, 0, new_random_size);
+		check_data(lsh, view);
+
+		CHECK(lsh.resize(long_random_string.size() * 2));
+		CHECK(lsh.size() == long_random_string.size() * 2);
+
+		const auto expected = long_random_string + std::string(long_random_string.size(), '\0');
+		check_data(lsh, view);
 	}
 }

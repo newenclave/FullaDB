@@ -227,7 +227,8 @@ TEST_SUITE("bpt/paged/model bpt") {
 				CHECK(root == bpt.get_model().get_invalid_node_id());
 				CHECK_FALSE(found);
 			}
-			std::cout << "Result filesize: " <<  mem.blocks_count() << "\n";
+			std::cout << "Result filesize: " <<  mem.blocks_count() << " blocks " 
+				<< mem.blocks_count() * mem.block_size() << " bytes\n";
 		}
 		std::filesystem::remove(path);
 	}

@@ -14,7 +14,7 @@
 #include <algorithm>
 #include <functional>
 
-#include "fulla/core/assert.hpp"
+#include "fulla/core/debug.hpp"
 #include "fulla/bpt/concepts.hpp"
 #include "fulla/bpt/paged/settings.hpp"
 

@@ -55,7 +55,8 @@ if (FULLADB_BUILD_TESTS)
     
     target_link_libraries(tests PRIVATE fulladb)    
     target_include_directories(tests PRIVATE ${FULLA_HEADERS})
-    
+    target_compile_definitions(tests PRIVATE ENABLE_PRIVATE_TESTS)
+
     include(CTest)
     enable_testing()
     add_test(NAME fulladb_tests COMMAND tests)
