@@ -15,12 +15,12 @@
 #include "fulla/page/header.hpp"
 #include "fulla/page/page_view.hpp"
 #include "fulla/page/long_store.hpp"
-#include "fulla/storage/device.hpp"
+#include "fulla/storage/block_device.hpp"
 #include "fulla/storage/buffer_manager.hpp"
 
 namespace fulla::long_store {
 
-	template <storage::RandomAccessDevice DeviceT, typename PidT = std::uint32_t,
+	template <storage::RandomAccessBlockDevice DeviceT, typename PidT = std::uint32_t,
 		std::uint16_t HeaderKindValue = 0, std::uint16_t ChunkKindValue =  1
 	>	
 	class handle {

@@ -74,7 +74,7 @@ namespace fulla::bpt::paged {
         { klt.operator ()(a, b) } -> std::convertible_to<bool>;
     };
 
-    template <storage::RandomAccessDevice DeviceT, 
+    template <storage::RandomAccessBlockDevice DeviceT, 
         typename PidT = std::uint32_t, 
         ModelKeyLessConcept KeyLessT = page::record_less>
     struct model {

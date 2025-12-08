@@ -5,8 +5,8 @@
 #include "tests.hpp"
 
 #include "fulla/bpt/paged/model.hpp"
-#include "fulla/storage/file_device.hpp"
-#include "fulla/storage/memory_device.hpp"
+#include "fulla/storage/file_block_device.hpp"
+#include "fulla/storage/memory_block_device.hpp"
 
 #include "fulla/page/header.hpp"
 #include "fulla/page/bpt_inode.hpp"
@@ -121,12 +121,11 @@ TEST_SUITE("bpt/paged/model bpt") {
 			constexpr static const auto small_buffer_size = DEFAULT_BUFFER_SIZE;
 			constexpr static const auto element_mximum = 10000;
 
-			file_device dev(path, small_buffer_size);
-			memory_device mem(small_buffer_size);
-			using model_type = paged::model<memory_device>;
+			memory_block_device mem(small_buffer_size);
+			using model_type = paged::model<memory_block_device>;
 			using bpt_type = fulla::bpt::tree<model_type>;
 
-			using BM = buffer_manager<memory_device>;
+			using BM = buffer_manager<memory_block_device>;
 			BM bm(mem, 40);
 			static std::random_device rd;
 			static std::mt19937 gen(rd());
@@ -228,20 +227,20 @@ TEST_SUITE("bpt/paged/model bpt") {
 				CHECK(root == bpt.get_model().get_invalid_node_id());
 				CHECK_FALSE(found);
 			}
-			std::cout << "Result filesize: " << mem.get_file_size() << "\n";
+			std::cout << "Result filesize: " <<  mem.blocks_count() << "\n";
 		}
-		CHECK(std::filesystem::remove(path));
+		std::filesystem::remove(path);
 	}
 
 	TEST_CASE("custom less") {
 		constexpr static const auto small_buffer_size = DEFAULT_BUFFER_SIZE / 6;
 		constexpr static const auto element_mximum = 1000;
 
-		memory_device mem(small_buffer_size);
+		memory_block_device mem(small_buffer_size);
 
-		using BM = buffer_manager<memory_device>;
+		using BM = buffer_manager<memory_block_device>;
 		BM bm(mem, 6);
-		using model_type = paged::model<memory_device, std::uint32_t, string_less>;
+		using model_type = paged::model<memory_block_device, std::uint32_t, string_less>;
 		using node_id_type = typename model_type::node_id_type;
 		using bpt_type = fulla::bpt::tree<model_type>;
 

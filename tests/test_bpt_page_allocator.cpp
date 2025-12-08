@@ -4,7 +4,7 @@
 #include "tests.hpp"
 
 #include "fulla/bpt/paged/model.hpp"
-#include "fulla/storage/file_device.hpp"
+#include "fulla/storage/file_block_device.hpp"
 #include "fulla/page/header.hpp"
 #include "fulla/page/bpt_inode.hpp"
 #include "fulla/page/bpt_leaf.hpp"
@@ -20,7 +20,7 @@ namespace {
 	using namespace fulla::storage;
 	using namespace fulla::bpt;
 
-	using file_device = fulla::storage::file_device;
+	using file_device = fulla::storage::file_block_device;
 
 	using model_type = paged::model<file_device>;
 	using key_like_type = typename model_type::key_like_type;
@@ -28,8 +28,6 @@ namespace {
 	using page_header_type = fulla::page::page_header;
 	using page_view_type = typename model_type::page_view_type;
 	using node_id_type = typename model_type::node_id_type;
-
-	using file_device = fulla::storage::file_device;
 
 	static std::filesystem::path temp_file(const char* stem) {
 		namespace fs = std::filesystem;
@@ -122,7 +120,7 @@ TEST_SUITE("bpt/paged/model allocator_type") {
 			}
 		}
 
-		CHECK(std::filesystem::remove(path));
+		std::filesystem::remove(path);
 
 	}	
 }

@@ -9,6 +9,7 @@
 #include "fulla/core/bytes.hpp"
 #include "fulla/storage/device.hpp"
 #include "fulla/storage/file_device.hpp"
+#include "fulla/storage/file_block_device.hpp"
 
 using namespace fulla::core;
 using namespace fulla::storage;
@@ -100,6 +101,38 @@ TEST_SUITE("storage/file_device") {
             // Read back B and verify
             std::vector<byte> rb(b.size());
             CHECK(dev.read_at_offset(pos_b, rb.data(), rb.size()));
+            for (std::size_t i = 0; i < b.size(); ++i) {
+                CHECK(static_cast<unsigned char>(rb[i]) == 0xBB);
+            }
+        }
+
+        CHECK(fs::remove(path));
+    }
+
+
+    TEST_CASE("append returns correct position and grows the file_block") {
+        namespace fs = std::filesystem;
+        auto path = make_temp_file("fulla_fd_append");
+
+        {
+            file_block_device dev(path, 4096);
+            CHECK(dev.is_open());
+
+            std::vector<byte> a(10, static_cast<byte>(0xAA));
+            std::vector<byte> b(20, static_cast<byte>(0xBB));
+
+            auto pos_a = dev.append(a.data(), a.size());
+            CHECK(pos_a == 0); // first append at empty file starts at 0
+
+            auto pos_b = dev.append(b.data(), b.size());
+            CHECK(pos_b == 1); // next append starts next block
+
+            auto sz = dev.blocks_count();
+            CHECK(sz == 2);
+
+            // Read back B and verify
+            std::vector<byte> rb(b.size());
+            CHECK(dev.read_block(1, rb.data(), rb.size()));
             for (std::size_t i = 0; i < b.size(); ++i) {
                 CHECK(static_cast<unsigned char>(rb[i]) == 0xBB);
             }

@@ -19,15 +19,16 @@
 #include "fulla/core/bytes.hpp"
 #include "fulla/core/assert.hpp"
 #include "fulla/storage/device.hpp" // RandomAccessDevice, position_type
+#include "fulla/storage/block_device.hpp" // RandomAccessBlockDevice, position_type
 #include "fulla/storage/stats.hpp"  // stats / null_stats
 
 
 namespace fulla::storage {
 
     using core::byte_view;
-	template <storage::RandomAccessDevice RadT, typename PidT = std::uint32_t>
+	template <storage::RandomAccessBlockDevice RadT, typename PidT = std::uint32_t>
 	class buffer_manager {
-		using offset_type = typename RadT::offset_type;
+		using block_id_type = typename RadT::block_id_type;
 	public:
 
 		using pid_type = PidT;
@@ -38,6 +39,8 @@ namespace fulla::storage {
 			frame() = default;
 			frame(const frame&) = delete;
 			frame& operator = (const frame&) = delete;
+			frame(frame&&) = delete;
+			frame& operator = (frame&&) = delete;
 
 			void reset() {
 				dirty = false;
@@ -237,8 +240,16 @@ namespace fulla::storage {
 		page_handle create(bool mark_dirty = false) {
 			if (auto fs_idx = find_free_frame()) {
 				auto buffer_data = frame_id_to_span(*fs_idx);
-				const auto new_off = device_->allocate_block();
-				const auto new_pid = device_offset_to_pid(new_off);
+				const auto new_bid = device_->allocate_block();
+				
+				if (new_bid == RadT::invalid_block_id) {
+					auto* fs = &frames_[*fs_idx];
+					fs->reset();
+					push_frame_freed(fs);
+					return {};
+				}
+				
+				const auto new_pid = static_cast<pid_type>(new_bid);
 				auto* fs = &frames_[*fs_idx];
 				fs->reinit(new_pid, buffer_data);
 				push_frame_used(fs);
@@ -272,6 +283,7 @@ namespace fulla::storage {
 					return { this, fs };
 				}
 				else {
+					fs->reset();
 					push_frame_freed(fs);
 				}
 			}
@@ -309,7 +321,6 @@ namespace fulla::storage {
 			return false;
 		}
 
-
 		void flush_all() {
 			std::ranges::for_each(frames_, [this](auto& frame) { flush(&frame); });
 		}
@@ -341,22 +352,13 @@ namespace fulla::storage {
 			}
 		}
 
-		pid_type device_offset_to_pid(offset_type off) const noexcept {
-			DB_ASSERT(off % block_size() == 0, "offset must be aligned");
-			return static_cast<pid_type>(off / block_size());
-		}
-
 		core::byte_span frame_id_to_span(std::size_t id) {
 			const auto buff_off = frame_id_to_buffer_offset(id);
 			return { reinterpret_cast<core::byte*>(&buffer_[buff_off]), block_size() };
 		}
 
-		offset_type pid_to_device_offset(pid_type pid) const noexcept {
-			return static_cast<offset_type>(pid * block_size());
-		}
-
-		offset_type frame_id_to_buffer_offset(std::size_t id) const noexcept {
-			return static_cast<offset_type>(id * block_size());
+		std::size_t frame_id_to_buffer_offset(std::size_t id) const noexcept {
+			return static_cast<std::size_t>(id * block_size());
 		}
 
 		bool valid_slot_id(std::size_t id) const noexcept {
@@ -364,8 +366,7 @@ namespace fulla::storage {
 		}
 
 		bool valid_pid(pid_type pid) const {
-			const auto off = pid_to_device_offset(pid);
-			return off <= (device_->get_file_size() - block_size());
+			return pid < (device_->blocks_count());
 		}
 
 		auto block_size() const noexcept {
@@ -454,15 +455,13 @@ namespace fulla::storage {
 		}
 
 		bool write(pid_type pid, core::byte_view data) {
-			const auto dev_off = pid_to_device_offset(pid);
 			DB_ASSERT(data.size() <= block_size(), "src must be page_size maximum");
-			const bool ok = device_->write_at_offset(dev_off, data.data(), data.size());
+			const bool ok = device_->write_block(pid, data.data(), data.size());
 			return ok;
 		}
 
 		bool read(pid_type pid, core::byte_span data) {
-			const auto dev_off = pid_to_device_offset(pid);
-			const auto ok = device_->read_at_offset(dev_off, data.data(), data.size());
+			const auto ok = device_->read_block(pid, data.data(), data.size());
 			return ok;
 		}
 

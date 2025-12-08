@@ -6,6 +6,7 @@
 
 #include "fulla/bpt/paged/model.hpp"
 #include "fulla/storage/file_device.hpp"
+#include "fulla/storage/file_block_device.hpp"
 #include "fulla/page/header.hpp"
 #include "fulla/codec/prop.hpp"
 #include "fulla/page/bpt_leaf.hpp"
@@ -19,7 +20,7 @@ namespace {
 	using fulla::core::byte_span;
 	using fulla::core::byte;
 
-	using file_device = fulla::storage::file_device;
+	using file_device = fulla::storage::file_block_device;
 
 	using namespace fulla::bpt;
 	using model_type = paged::model<file_device>;

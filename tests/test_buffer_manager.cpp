@@ -6,6 +6,8 @@
 #include "fulla/storage/device.hpp"
 #include "fulla/storage/file_device.hpp"
 #include "fulla/storage/memory_device.hpp"
+#include "fulla/storage/file_block_device.hpp"
+#include "fulla/storage/memory_block_device.hpp"
 #include "fulla/storage/buffer_manager.hpp"
 
 #include <filesystem>
@@ -29,9 +31,9 @@ TEST_SUITE("storage/buffer_manager") {
         auto path = temp_file("bm");
 
         {
-            file_device dev(path, 1024);
+            file_block_device dev(path, 1024);
             std::vector<byte> arena(1024 * 2);
-            using BM = buffer_manager<file_device>;
+            using BM = buffer_manager<file_block_device>;
             std::vector<typename BM::frame> frames(2);
 
             BM bm(dev, 2);
@@ -67,9 +69,9 @@ TEST_SUITE("storage/buffer_manager") {
         auto path = temp_file("bm_evict");
 
         {
-            file_device dev(path, 1024);
+            file_block_device dev(path, 1024);
             std::vector<byte> arena(1024 * 2);
-            using BM = buffer_manager<file_device>;
+            using BM = buffer_manager<file_block_device>;
             std::vector<typename BM::frame> frames(2);
             BM bm(dev, 2);
 
@@ -110,8 +112,8 @@ TEST_SUITE("storage/buffer_manager") {
     }
 
     TEST_CASE("exhaustion under pressure") {
-        memory_device device(256);
-		using BM = buffer_manager<memory_device>;
+        memory_block_device device(256);
+		using BM = buffer_manager<memory_block_device>;
         BM bm(device, 3);
 		auto p0 = bm.create();
         auto p1 = bm.create();

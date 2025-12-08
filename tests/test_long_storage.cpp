@@ -6,6 +6,7 @@
 
 #include "fulla/bpt/paged/model.hpp"
 #include "fulla/storage/memory_device.hpp"
+#include "fulla/storage/memory_block_device.hpp"
 
 #include "fulla/page/header.hpp"
 #include "fulla/page/long_store.hpp"
@@ -99,7 +100,7 @@ namespace {
 
 TEST_SUITE("long_store in work") {
 
-	using device_type = storage::memory_device;
+	using device_type = storage::memory_block_device;
 	using pid_type = std::uint32_t;
 	using buffer_manager_type = buffer_manager<device_type, pid_type>;
 	using long_store_handle = fulla::long_store::handle<device_type, pid_type>;
