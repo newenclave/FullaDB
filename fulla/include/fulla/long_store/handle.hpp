@@ -18,12 +18,6 @@
 #include "fulla/storage/block_device.hpp"
 #include "fulla/storage/buffer_manager.hpp"
 
-#ifdef ENABLE_PRIVATE_TESTS
-#define PRIVATE_TESTABLE public
-#else
-#define PRIVATE_TESTABLE private
-#endif
-
 namespace fulla::long_store {
 
 	template <storage::RandomAccessBlockDevice DeviceT, typename PidT = std::uint32_t,
@@ -32,6 +26,7 @@ namespace fulla::long_store {
 	class handle {
 
 		struct page_iterator;
+		friend struct page_iterator;
 
 	public:
 
@@ -912,6 +907,8 @@ namespace fulla::long_store {
 
 		bool remove_page(pid_type pid) {
 			auto pv = fetch(pid);
+			// need to invalidate page here. 
+			// Ex: set kind to invalid, size to 0, next/prev to invalid
 			if (std::holds_alternative<header_handle>(pv)) {
 				/// think about header removal
 				auto head = std::get<header_handle>(pv);
