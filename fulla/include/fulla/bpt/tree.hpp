@@ -24,6 +24,7 @@ namespace fulla::bpt {
     class tree {
 
     public:
+
         using model_type = ModelT;
         using accessor_type = typename model_type::accessor_type;
         

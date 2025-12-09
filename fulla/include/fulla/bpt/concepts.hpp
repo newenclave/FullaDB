@@ -11,6 +11,13 @@
 
 namespace fulla::bpt::concepts {
 
+    template <typename T>
+    concept BptNodeIndexValues = requires (T s) {
+        { T::leaf_kind_value } -> std::convertible_to<std::uint16_t>;
+        { T::inode_kind_value } -> std::convertible_to<std::uint16_t>;
+        { T::root_kind_value } -> std::convertible_to<std::uint16_t>;
+    };
+
     template<typename T, typename NodeId, typename KeyOutT, typename ValueOutT>
     concept Stringifier = requires (const T & obj, NodeId id, const KeyOutT & kout, const ValueOutT & vout) {
         { obj.id_as_string(id) } -> std::convertible_to<std::string>;

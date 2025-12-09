@@ -11,6 +11,7 @@
 #include <variant>
 
 #include "fulla/core/debug.hpp"
+#include "fulla/long_store/concepts.hpp"
 
 #include "fulla/page/header.hpp"
 #include "fulla/page/page_view.hpp"
@@ -20,9 +21,13 @@
 
 namespace fulla::long_store {
 
+	struct default_long_store_index_values {
+		constexpr static const std::uint16_t header_kind_value = 10;
+		constexpr static const std::uint16_t chunk_kind_value = 11;
+	};
+
 	template <storage::RandomAccessBlockDevice DeviceT, typename PidT = std::uint32_t,
-		std::uint16_t HeaderKindValue = 0, std::uint16_t ChunkKindValue =  1
-	>	
+		concepts::LongStoreIndexValues Indices = default_long_store_index_values>
 	class handle {
 
 		struct page_iterator;
@@ -30,8 +35,8 @@ namespace fulla::long_store {
 
 	public:
 
-		constexpr static const std::uint16_t header_kind_value = HeaderKindValue;
-		constexpr static const std::uint16_t chunk_kind_value = ChunkKindValue;
+		constexpr static const std::uint16_t header_kind_value = Indices::header_kind_value;
+		constexpr static const std::uint16_t chunk_kind_value = Indices::chunk_kind_value;
 
 		static_assert(header_kind_value != chunk_kind_value, "values must not be equal");
 
@@ -497,10 +502,6 @@ namespace fulla::long_store {
 				return current_pid != invalid_pid;
 			}
 
-			bool is_header() const noexcept {
-				return (owner != nullptr) && (current_pid == owner->header_page_);
-			}
-
 			auto get_page() const {
 				if (owner != nullptr) {
 					return owner->fetch(current_pid);
@@ -537,13 +538,6 @@ namespace fulla::long_store {
 				else if (std::holds_alternative<chunk_handle>(pv)) {
 					auto c = std::get<chunk_handle>(pv);
 					c.set_size(value);
-				}
-			}
-
-			void mark_dirty() {
-				auto ph = owner->mgr_->fetch(current_pid);
-				if (ph.is_valid()) {
-					mark_dirty(ph);
 				}
 			}
 
@@ -685,7 +679,7 @@ namespace fulla::long_store {
 			auto current = header_page_;
 
 			while ((current != invalid_pid) && (current != page_id)) {
-				auto pv = const_cast<handle*>(this)->fetch(current);
+				auto pv = fetch(current);
 				if (std::holds_alternative<header_handle>(pv)) {
 					auto h = std::get<header_handle>(pv);
 					pos += h.get_size();
@@ -1029,7 +1023,7 @@ namespace fulla::long_store {
 			return chunk_handle{ ph };
 		}
 
-		buffer_manager_type mutable *mgr_ = nullptr;
+		mutable buffer_manager_type *mgr_ = nullptr;
 		pid_type header_page_ = invalid_pid;
 		pid_type gpage_ = invalid_pid;
 		pid_type spage_ = invalid_pid;
