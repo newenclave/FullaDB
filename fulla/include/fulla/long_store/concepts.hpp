@@ -20,9 +20,18 @@
 #include "fulla/storage/buffer_manager.hpp"
 
 namespace fulla::long_store::concepts {
+
     template <typename T>
-    concept LongStoreIndexValues = requires (T s) {
+    concept LongStoreKinds = requires (T s) {
         { T::header_kind_value } -> std::convertible_to<std::uint16_t>;
         { T::chunk_kind_value } -> std::convertible_to<std::uint16_t>;
     };
+    template <typename T>
+    concept LongStoreMetadata = requires {
+        typename T::header_metadata_type;
+        typename T::chunk_metadata_type;
+    };
+
+    template <typename T>
+    concept LongStoreDescriptor = LongStoreKinds<T> && LongStoreMetadata<T>;
 }

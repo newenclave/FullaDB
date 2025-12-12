@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <iostream>
 #include <optional>
 #include <format>
 #include <sstream>
@@ -42,6 +43,9 @@ namespace fulla::bpt {
         constexpr static const std::size_t npos = std::numeric_limits<std::size_t>::max();
 
         tree() = default;
+
+        tree(tree&&) = default;
+        tree& operator = (tree&&) = default;
 
         template <typename ...Args>
         tree(Args&&...args) : model_(std::forward<Args>(args)...) {}
@@ -164,6 +168,10 @@ namespace fulla::bpt {
 
             std::size_t position() const noexcept {
                 return idx_;
+            }
+
+            bool is_valid() const noexcept {
+                return (tree_ != nullptr) && (leaf_id_ != tree_->get_invalid_id());
             }
 
         private:

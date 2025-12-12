@@ -5,6 +5,8 @@
 
 #include "fulla/bpt/paged/model.hpp"
 #include "fulla/storage/file_block_device.hpp"
+#include "fulla/storage/buffer_manager.hpp"
+
 #include "fulla/page/header.hpp"
 #include "fulla/page/bpt_inode.hpp"
 #include "fulla/page/bpt_leaf.hpp"
@@ -21,8 +23,9 @@ namespace {
 	using namespace fulla::bpt;
 
 	using file_device = fulla::storage::file_block_device;
+	using buffer_manager_type = fulla::storage::buffer_manager<file_device, std::uint32_t>;
 
-	using model_type = paged::model<file_device>;
+	using model_type = paged::model<buffer_manager_type>;
 	using key_like_type = typename model_type::key_like_type;
 
 	using page_header_type = fulla::page::page_header;

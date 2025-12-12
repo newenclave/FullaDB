@@ -32,7 +32,6 @@ namespace fulla::page {
         }
     };
 
-
     template <typename SlotExtractorT>
     concept SlotExtractorConcept = requires(SlotExtractorT se) {
         { se.operator ()(byte_view{}) } -> std::convertible_to<byte_view>;

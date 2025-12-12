@@ -12,11 +12,19 @@
 namespace fulla::bpt::concepts {
 
     template <typename T>
-    concept BptNodeIndexValues = requires (T s) {
+    concept BptNodeKinds = requires (T s) {
         { T::leaf_kind_value } -> std::convertible_to<std::uint16_t>;
         { T::inode_kind_value } -> std::convertible_to<std::uint16_t>;
-        { T::root_kind_value } -> std::convertible_to<std::uint16_t>;
     };
+
+    template <typename T>
+    concept BptNodeMetadata = requires {
+        typename T::leaf_metadata_type;
+        typename T::inode_metadata_type;
+    };
+
+    template <typename T>
+    concept BptNodeDescriptor = BptNodeKinds<T> && BptNodeMetadata<T>;
 
     template<typename T, typename NodeId, typename KeyOutT, typename ValueOutT>
     concept Stringifier = requires (const T & obj, NodeId id, const KeyOutT & kout, const ValueOutT & vout) {
@@ -72,7 +80,7 @@ namespace fulla::bpt::concepts {
     };
 
     template <typename LeafNodeT, typename KeyOutT, typename KeyLikeT, typename KeyBorrowT, 
-                typename ValueOutT, typename ValueInT, typename ValueBorrowT>
+              typename ValueOutT, typename ValueInT, typename ValueBorrowT>
     concept LeafNode = NodeKeys<LeafNodeT, KeyOutT, KeyLikeT, KeyBorrowT> 
         && requires(LeafNodeT n, std::size_t pos, KeyLikeT key, ValueInT val) {
 
@@ -140,7 +148,7 @@ namespace fulla::bpt::concepts {
         { m.get_invalid_node_id() } -> std::convertible_to<typename ModelT::node_id_type>;
 
         requires requires(typename ModelT::key_out_type kout, typename ModelT::value_out_type vout, 
-                           typename ModelT::key_borrow_type kbor, typename ModelT::value_borrow_type vbor) {
+                          typename ModelT::key_borrow_type kbor, typename ModelT::value_borrow_type vbor) {
 
             { m.key_out_as_like(kout) } -> std::convertible_to<typename ModelT::key_like_type>;
             { m.key_borrow_as_like(kbor) } -> std::convertible_to<typename ModelT::key_like_type>;

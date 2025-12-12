@@ -15,6 +15,7 @@
 #include <functional>
 
 #include "fulla/core/debug.hpp"
+#include "fulla/core/concepts.hpp"
 #include "fulla/bpt/concepts.hpp"
 #include "fulla/bpt/paged/settings.hpp"
 
@@ -23,15 +24,14 @@
 #include "fulla/page/bpt_inode.hpp"
 #include "fulla/page/bpt_leaf.hpp"
 #include "fulla/page/bpt_root.hpp"
+#include "fulla/page/metadata.hpp"
 
 #include "fulla/page/freed.hpp"
 
 #include "fulla/page/slot_directory.hpp"
 #include "fulla/page/ranges.hpp"
 
-#include "fulla/storage/device.hpp"
-#include "fulla/storage/buffer_manager.hpp"
-
+#include "fulla/page_allocator/concepts.hpp"
 
 namespace fulla::bpt::paged {
 
@@ -74,31 +74,59 @@ namespace fulla::bpt::paged {
         { klt.operator ()(a, b) } -> std::convertible_to<bool>;
     };
 
-    struct default_page_model_index_values {
-        constexpr static const std::uint16_t leaf_kind_value = 1;
-        constexpr static const std::uint16_t inode_kind_value = 2;
-        constexpr static const std::uint16_t root_kind_value = 3;
+    template<typename T, typename NodeIdT>
+    concept RootManager = requires(T t, NodeIdT id) {
+        { t.load_root() } -> std::convertible_to<std::tuple<NodeIdT, bool>>;
+        { t.set_root(id) } -> std::same_as<void>;
     };
 
-    template <storage::RandomAccessBlockDevice DeviceT, 
-        typename PidT = std::uint32_t, 
+    template<typename NodeIdT>
+    struct memory_root_manager {
+        std::tuple<NodeIdT, bool> load_root() const {
+            if (root_) {
+                return { *root_, true };
+            }
+            return { NodeIdT{}, false };
+        }
+
+        void set_root(NodeIdT id) {
+            root_ = std::optional<NodeIdT>(id);
+        }
+
+    private:
+        std::optional<NodeIdT> root_;
+    };
+
+    struct default_bpt_descriptor {
+        using leaf_metadata_type = page::empty_metadata;
+        using inode_metadata_type = page::empty_metadata;
+        constexpr static const std::uint16_t leaf_kind_value = 1;
+        constexpr static const std::uint16_t inode_kind_value = 2;
+    };
+
+    template <page_allocator::concepts::PageAllocator PageAllocatorT,
         ModelKeyLessConcept KeyLessT = page::record_less,
-        bpt::concepts::BptNodeIndexValues Indices = default_page_model_index_values
+        RootManager<typename PageAllocatorT::pid_type> RootManagerT = memory_root_manager<typename PageAllocatorT::pid_type>,
+        bpt::concepts::BptNodeDescriptor Descriptor = default_bpt_descriptor
     >
     struct model {
 
-        constexpr static const std::uint16_t leaf_kind_value = Indices::leaf_kind_value;
-        constexpr static const std::uint16_t inode_kind_value = Indices::inode_kind_value;
-        constexpr static const std::uint16_t root_kind_value = Indices::root_kind_value;
+        constexpr static const std::uint16_t leaf_kind_value = Descriptor::leaf_kind_value;
+        constexpr static const std::uint16_t inode_kind_value = Descriptor::inode_kind_value;
+        using leaf_metadata_type = Descriptor::leaf_metadata_type;
+        using inode_metadata_type = Descriptor::inode_metadata_type;
 
-        using buffer_manager_type = storage::buffer_manager<DeviceT, PidT>;
+        using root_manager_type = RootManagerT;
+        using buffer_manager_type = PageAllocatorT;
+        using pid_type = typename buffer_manager_type::pid_type;
+		using page_handle = typename buffer_manager_type::page_handle;
         using slot_directory_type = model_common::slot_directory_type;
         using page_view_type = model_common::page_view_type;
         using cpage_view_type = model_common::cpage_view_type;
 
         using less_type = KeyLessT;
 
-        using node_id_type = PidT;
+        using node_id_type = pid_type;
         constexpr static const node_id_type invalid_node_value = std::numeric_limits<node_id_type>::max();
 
         constexpr static const std::size_t maximum_inode_slot_size = 200;
@@ -151,7 +179,9 @@ namespace fulla::bpt::paged {
 
             using node_id_type = node_id_type;
 
-            node_base(page_view_type page, node_id_type self_id, std::size_t min_l, std::size_t max_l, typename buffer_manager_type::page_handle hdl)
+            node_base(page_view_type page, node_id_type self_id, 
+                std::size_t min_l, std::size_t max_l, 
+                page_handle hdl)
                 : page_(page)
                 , id_(self_id) 
                 , minimum_len(min_l)
@@ -160,6 +190,10 @@ namespace fulla::bpt::paged {
             {}
 
             node_base() = default;
+            node_base(node_base&&) = default;
+            node_base& operator = (node_base&&) = default;
+            node_base(const node_base&) = default;
+            node_base& operator = (const node_base&) = default;
 
             virtual ~node_base() = default;
 
@@ -266,6 +300,10 @@ namespace fulla::bpt::paged {
             {}
 
             leaf_type() = default;
+            leaf_type(leaf_type&&) = default;
+            leaf_type& operator = (leaf_type&&) = default;
+            leaf_type(const leaf_type&) = default;
+            leaf_type& operator = (const leaf_type&) = default;
 
             virtual byte_view extract_key(byte_view val) const {
                 const auto key_proj = leaf_key_extractor{};
@@ -450,6 +488,10 @@ namespace fulla::bpt::paged {
             {}
 
             inode_type() = default;
+            inode_type(inode_type&&) = default;
+            inode_type& operator = (inode_type&&) = default;
+            inode_type(const inode_type&) = default;
+            inode_type& operator = (const inode_type&) = default;
 
             virtual byte_view extract_key(byte_view val) const {
                 const auto key_proj = inode_key_extractor{};
@@ -568,12 +610,21 @@ namespace fulla::bpt::paged {
         static_assert(concepts::LeafNode<leaf_type, key_out_type, key_like_type, key_borrow_type, 
                 value_out_type, value_in_type, value_borrow_type>);
 
+
+        model(buffer_manager_type& mgr, settings sett, root_manager_type root)
+            : accessor_(mgr, std::move(sett), std::move(root))
+        {}
+
         model(buffer_manager_type& mgr, settings sett)
-            : accessor_(mgr, std::move(sett))
+            : model(mgr, std::move(sett), {})
+        {}
+
+        model(buffer_manager_type& mgr, root_manager_type root)
+            : model(mgr, {}, std::move(root))
         {}
 
         model(buffer_manager_type& mgr)
-            : model(mgr, {})
+            : model(mgr, {}, {})
         {}
 
         struct accessor_type {
@@ -581,35 +632,48 @@ namespace fulla::bpt::paged {
             using leaf_type = model::leaf_type;
             using inode_type = model::inode_type;
 
-            accessor_type(buffer_manager_type& mgr, settings sett)
-                : mgr_(mgr)
+            accessor_type(buffer_manager_type& mgr, settings sett, root_manager_type root)
+                : mgr_(&mgr)
                 , sett_(std::move(sett))
-            {
-                //check_create_root_node();
-            }
+                , root_(std::move(root))
+            {}
 
             accessor_type(buffer_manager_type& mgr)
                 : accessor_type(mgr, {})
             {}
 
-            leaf_type create_leaf() {
-                typename buffer_manager_type::page_handle new_page = pop_free_page();
+            accessor_type(buffer_manager_type& mgr, root_manager_type root)
+                : accessor_type(mgr, {}, std::move(root))
+            {}
 
-                if (!new_page.is_valid()) {
-                    new_page = mgr_.create();
-                }
+            static_assert(page::metadata_size<leaf_metadata_type>() < 1024,
+                    "Leaf metadata too large (>1KB)");
+            static_assert(page::metadata_size<inode_metadata_type>() < 1024,
+                    "INode metadata too large (>1KB)");
+
+            leaf_type create_leaf() {
+                auto new_page = mgr_->allocate();
                 if (new_page.is_valid()) {
                     auto pv = page_view_type{ new_page.rw_span() };
                     const auto page_id = new_page.pid();
-                    pv.header().init(leaf_kind_value, mgr_.page_size(), page_id, sizeof(page::bpt_leaf_header));
+                    pv.header().init(
+                        leaf_kind_value,
+                        mgr_->page_size(), 
+                        page_id,
+                        sizeof(page::bpt_leaf_header),
+                        page::metadata_size<leaf_metadata_type>());
                     pv.get_slots_dir().init();
                     auto subhdr = pv.subheader<page::bpt_leaf_header>();
                     subhdr->init();
                     subhdr->parent = invalid_node_value;
                     subhdr->next = invalid_node_value;
                     subhdr->prev = invalid_node_value;
-                    new_page.mark_dirty();
 
+                    if constexpr (core::concepts::HasInit<leaf_metadata_type>) {
+                        pv.metadata_as<leaf_metadata_type>()->init();
+                    }
+
+                    new_page.mark_dirty();
                     return { 
                         pv, page_id, std::move(new_page), 
                         sett_.leaf_minimum_slot_size, 
@@ -620,20 +684,25 @@ namespace fulla::bpt::paged {
             }
             
             inode_type create_inode() {
-                typename buffer_manager_type::page_handle new_page = pop_free_page();
-                if (!new_page.is_valid()) {
-                    new_page = mgr_.create();
-                }
+                auto new_page = mgr_->allocate();
                 if (new_page.is_valid()) {
                     auto pv = page_view_type{ new_page.rw_span() };
                     const auto page_id = new_page.pid();
-                    pv.header().init(inode_kind_value, mgr_.page_size(), page_id, sizeof(page::bpt_inode_header));
+                    pv.header().init(inode_kind_value, 
+                        mgr_->page_size(), 
+                        page_id, 
+                        sizeof(page::bpt_inode_header),
+                        page::metadata_size<inode_metadata_type>());
                     pv.get_slots_dir().init();
                     auto subhdr = pv.subheader<page::bpt_inode_header>();
                     subhdr->init();
                     subhdr->parent = invalid_node_value;
-                    new_page.mark_dirty();
 
+                    if constexpr (core::concepts::HasInit<inode_metadata_type>) {
+                        pv.metadata_as<inode_metadata_type>()->init();
+                    }
+
+                    new_page.mark_dirty();
                     return { pv, page_id, std::move(new_page),
                         sett_.inode_minimum_slot_size, 
                         sett_.inode_maximum_slot_size 
@@ -643,12 +712,12 @@ namespace fulla::bpt::paged {
             }
 
             bool destroy(node_id_type id) {
-                push_free_page(id);
+				mgr_->destroy(id);
                 return true;
             }
 
             leaf_type load_leaf(node_id_type id) {
-                auto new_page = mgr_.fetch(id);
+                auto new_page = mgr_->fetch(id);
                 if (new_page.is_valid()) {
                     const auto page_id = new_page.pid();
                     auto data = new_page.rw_span();
@@ -666,7 +735,7 @@ namespace fulla::bpt::paged {
             }
             
             inode_type load_inode(node_id_type id) {
-                auto new_page = mgr_.fetch(id);
+                auto new_page = mgr_->fetch(id);
                 if (new_page.is_valid()) {
                     const auto page_id = new_page.pid();
                     auto data = new_page.rw_span();
@@ -701,67 +770,19 @@ namespace fulla::bpt::paged {
             }
 
             std::tuple<node_id_type, bool> load_root() {
-                if(root_) {
-                    return { *root_, true };
-                }
-                return { invalid_node_value, false };
+                const auto value = root_.load_root();
+                return std::get<0>(value) == invalid_node_value 
+                    ? std::make_tuple(invalid_node_value, false)
+                    : value;
             }
 
             void set_root(node_id_type id) {
-                if (id != invalid_node_value) {
-                    root_ = { id };
-                }
-                else {
-                    root_ = {};
-                }
+                return root_.set_root(id);
             }
 
-            auto pop_free_page() {
-                if (first_freed_ != invalid_node_value) {
-                    auto page = mgr_.fetch(first_freed_);
-                    if (page.is_valid()) {
-                        const auto pv = cpage_view_type{ page.ro_span() };
-                        const auto *fh = pv.subheader<page::freed>();
-                        first_freed_ = fh->next;
-                        return page;
-                    }
-                }
-                return typename buffer_manager_type::page_handle{};
-            }
-
-            void push_free_page(node_id_type id) {
-                auto page = mgr_.fetch(id);
-                if (page.is_valid()) {
-                    auto pv = page_view_type{ page.rw_span() };
-                    pv.header().init(core::word_u16::max(), pv.size(), id, sizeof(page::freed));
-                    auto *fh = pv.subheader<page::freed>();
-                    fh->init();
-                    fh->next = first_freed_;
-                    first_freed_ = id;
-                    page.mark_dirty();
-                }
-            }
-
-            void check_create_root_node() {
-                auto first_node = mgr_.fetch(0);
-                if (!first_node.is_valid()) {
-                    first_node = mgr_.create();
-                    auto pv = page_view_type{ first_node.rw_span() };
-                    pv.header().init(root_kind_value, mgr_.page_size(), 0, sizeof(page::bpt_root));
-                    auto rh = pv.subheader<page::bpt_root>();
-                    rh->root = invalid_node_value;
-                    first_node.mark_dirty();
-                }
-                else {
-                    const auto pv = cpage_view_type{ first_node.ro_span() };
-                    const auto rh = pv.subheader<page::bpt_root>();
-                    root_ = { rh->root.get() };
-                }
-            }
-
-            std::optional<node_id_type> root_ {};
-            buffer_manager_type &mgr_;
+            buffer_manager_type *mgr_ = nullptr;
             settings sett_{};
+            root_manager_type root_{};
             node_id_type first_freed_ = invalid_node_value;
         };
 
@@ -785,11 +806,11 @@ namespace fulla::bpt::paged {
         }
 
         bool is_valid_id(node_id_type id) {
-            return (id != invalid_node_value) && (accessor_.mgr_.valid_pid(id));
+            return (id != invalid_node_value) && (accessor_.mgr_->valid_id(id));
         }
 
         bool is_leaf_id(node_id_type id) {
-            auto p = accessor_.mgr_.fetch(id);
+            auto p = accessor_.mgr_->fetch(id);
             if (p.is_valid()) {
                 return reinterpret_cast<const page::page_header*>(p.ro_span().data())->kind 
                     == static_cast<std::uint16_t>(leaf_kind_value);
@@ -851,5 +872,4 @@ namespace fulla::bpt::paged {
         std::function<std::string(node_id_type)> id_as_string_;
         accessor_type accessor_;
     };
-
 }

@@ -41,6 +41,10 @@ namespace fulla::page {
 
         SpanT get() const { return page_; }
 
+        constexpr static std::size_t expectad_header_size(std::size_t subheader_size, std::size_t metadata_size) {
+            return sizeof(page_header) + subheader_size + metadata_size;
+        }
+
         // Header access
         auto& header() { 
             if constexpr (std::same_as<SpanT, byte_span>) {
@@ -48,9 +52,12 @@ namespace fulla::page {
             }
             else {
                 return *reinterpret_cast<const page_header*>(page_.data());
-			}
+            }
         }
-        const page_header& header() const { return *reinterpret_cast<const page_header*>(page_.data()); }
+
+        const page_header& header() const { 
+            return *reinterpret_cast<const page_header*>(page_.data()); 
+        }
 
         // Optional typed subheader
         template <class SubHdrT>
@@ -62,9 +69,28 @@ namespace fulla::page {
                 return reinterpret_cast<const SubHdrT*>(page_.data() + sizeof(page_header));
             }
         }
+
         template <class SubHdrT>
         const SubHdrT* subheader() const {
             return reinterpret_cast<const SubHdrT*>(page_.data() + sizeof(page_header));
+        }
+
+        auto metadata() const noexcept {
+            return header().metadata();
+        }
+
+        auto metadata() noexcept {
+            return header().metadata();
+        }
+
+        template <typename MetadataT>
+        auto metadata_as() const noexcept {
+            return reinterpret_cast<const MetadataT *>(metadata().data());
+        }
+
+        template <typename MetadataT>
+        auto metadata_as() noexcept {
+            return reinterpret_cast<MetadataT*>(metadata().data());
         }
 
         std::size_t size() const noexcept {
@@ -98,8 +124,7 @@ namespace fulla::page {
     private:
 
         std::size_t headers_len() const {
-            const auto& h = header();
-            return sizeof(page_header) + h.subhdr_size;
+            return header().base();
         }
 
         SpanT get_slot_directory() const {

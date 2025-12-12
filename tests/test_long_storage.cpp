@@ -102,15 +102,14 @@ namespace {
 	};
 
 	constexpr static const auto DEFAULT_BUFFER_SIZE = 4096UL;
-
 }
 
 TEST_SUITE("long_store in work") {
 
 	using device_type = storage::memory_block_device;
 	using pid_type = std::uint32_t;
-	using buffer_manager_type = buffer_manager<device_type, pid_type>;
-	using long_store_handle = fulla::long_store::handle<device_type, pid_type>;
+	using buffer_manager_type = page_allocator::base<device_type, pid_type>;
+	using long_store_handle = fulla::long_store::handle<buffer_manager_type>;
 
 	TEST_CASE("long_store handle basic operations") {
 

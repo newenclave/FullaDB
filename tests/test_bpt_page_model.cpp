@@ -7,6 +7,8 @@
 #include "fulla/bpt/paged/model.hpp"
 #include "fulla/storage/file_block_device.hpp"
 #include "fulla/storage/memory_block_device.hpp"
+#include "fulla/storage/buffer_manager.hpp"
+#include "fulla/page_allocator/base.hpp"
 
 #include "fulla/page/header.hpp"
 #include "fulla/page/bpt_inode.hpp"
@@ -122,10 +124,11 @@ TEST_SUITE("bpt/paged/model bpt") {
 			constexpr static const auto element_mximum = 10000;
 
 			memory_block_device mem(small_buffer_size);
-			using model_type = paged::model<memory_block_device>;
+			using buffer_manager_type = buffer_manager<memory_block_device>;
+			using model_type = paged::model<buffer_manager_type>;
 			using bpt_type = fulla::bpt::tree<model_type>;
 
-			using BM = buffer_manager<memory_block_device>;
+			using BM = buffer_manager_type;
 			BM bm(mem, 40);
 			static std::random_device rd;
 			static std::mt19937 gen(rd());
@@ -133,7 +136,7 @@ TEST_SUITE("bpt/paged/model bpt") {
 			SUBCASE("create tree") {
 				bpt_type bpt(bm);
 				bpt.set_rebalance_policy(policies::rebalance::neighbor_share);
-				bpt.get_accessor().check_create_root_node();
+
 				std::map<std::string, std::string> test;
 
 				std::cout << "File: " << path.string() << "\n";
@@ -237,7 +240,8 @@ TEST_SUITE("bpt/paged/model bpt") {
 
 		using BM = buffer_manager<memory_block_device>;
 		BM bm(mem, 6);
-		using model_type = paged::model<memory_block_device, std::uint32_t, string_less>;
+		using model_type = paged::model<BM, string_less>;
+
 		using node_id_type = typename model_type::node_id_type;
 		using bpt_type = fulla::bpt::tree<model_type>;
 
@@ -248,7 +252,6 @@ TEST_SUITE("bpt/paged/model bpt") {
 			bpt_type bpt(bm);
 			std::map<std::string, std::string> test;
 
-			bpt.get_accessor().check_create_root_node();
 			bpt.get_model().set_stringifier_callbacks(
 				[&](node_id_type id) -> std::string { return id == bpt.get_model().get_invalid_node_id() ? "<null>" : std::to_string(id); },
 				[](key_out_type kout) -> std::string { return std::string{ (const char*)kout.key.data(), kout.key.size() }; },

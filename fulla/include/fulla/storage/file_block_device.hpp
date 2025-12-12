@@ -26,6 +26,11 @@ public:
 	constexpr static block_id_type invalid_block_id = std::numeric_limits<block_id_type>::max();
 
     file_block_device() = default;
+    ~file_block_device() {
+        if (is_open()) {
+            file_.flush();
+        }
+    }
 
     explicit file_block_device(const std::filesystem::path& filename,
                          std::size_t block_size = 4096)
@@ -127,6 +132,7 @@ public:
         if (!is_open()) {
             return invalid_block_id;
         }
+        file_.clear();
         file_.seekp(0, std::ios::end);
         std::streamoff endp = file_.tellp();
         if (endp < 0) {

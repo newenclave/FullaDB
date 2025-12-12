@@ -29,6 +29,36 @@ else()
 endif()
 
 option(FULLADB_BUILD_TESTS "Build tests target" ON)
+option(FULLADB_BUILD_FULLA_FS "Build fulla-fs test project target" ON)
+
+if (FULLADB_BUILD_FULLA_FS)
+    file(GLOB_RECURSE FULLAFS_HEADERS
+        "${CMAKE_CURRENT_SOURCE_DIR}/fullafs/include/*.hpp"
+    )
+    
+    add_executable(fullafs
+        fullafs/main.cpp
+        ${FULLAFS_HEADERS}
+    )
+    target_link_libraries(fullafs PRIVATE fulladb)    
+    target_include_directories(fullafs PRIVATE ${FULLA_HEADERS})
+    target_include_directories(fullafs PRIVATE fullafs/include)
+    
+    source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/fullafs/include
+             PREFIX "include"
+             FILES ${FULLAFS_HEADERS})
+
+    add_executable(fullafs_tests
+        fullafs_tests/main.cpp
+        fullafs_tests/test_fs_page_allocator.cpp
+        fullafs_tests/test_fs_root.cpp
+    )
+    target_link_libraries(fullafs_tests PRIVATE fulladb)    
+    target_include_directories(fullafs_tests PRIVATE ${FULLA_HEADERS})
+    target_include_directories(fullafs_tests PRIVATE fullafs)
+    target_include_directories(fullafs_tests PRIVATE fullafs/include)
+
+endif()
 
 if (FULLADB_BUILD_TESTS)
     add_executable(tests

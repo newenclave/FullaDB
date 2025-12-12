@@ -32,6 +32,8 @@ namespace fulla::storage {
 	public:
 
 		using pid_type = PidT;
+		using underlying_device_type = RadT;
+
 		constexpr static const pid_type invalid_pid = std::numeric_limits<pid_type>::max();
 
 		struct frame {
@@ -84,6 +86,8 @@ namespace fulla::storage {
 		};
 
 		struct page_handle {
+
+			using pid_type = PidT;
 
 			page_handle() = default;
 
@@ -220,7 +224,7 @@ namespace fulla::storage {
 
 		using cache_map_type = std::unordered_map<pid_type, frame*>;
 
-		buffer_manager(RadT& device, std::size_t maximum_pages)
+		buffer_manager(underlying_device_type& device, std::size_t maximum_pages)
 			: device_(&device)
 			, buffer_(maximum_pages* device.block_size())
 			, frames_(maximum_pages)
@@ -235,6 +239,19 @@ namespace fulla::storage {
 				last = &s;
 			}
 			first_freed_ = &frames_[0];
+		}
+
+		buffer_manager() = delete;
+		buffer_manager(buffer_manager&&) = default;
+		buffer_manager& operator = (buffer_manager&&) = default;
+		buffer_manager(const buffer_manager&) = delete;
+		buffer_manager& operator = (const buffer_manager&) = delete;
+		~buffer_manager() {
+			flush_all();
+		}
+
+		page_handle allocate() {
+			return create(true);
 		}
 
 		page_handle create(bool mark_dirty = false) {
@@ -325,18 +342,57 @@ namespace fulla::storage {
 			std::ranges::for_each(frames_, [this](auto& frame) { flush(&frame); });
 		}
 
-	//private:
+		void destroy(pid_type) {
+			// TODO: rename/remove this call from here. 
+			/// this is not a real call.This class is not supposed to be a page_allocator.
+		}
 
-		void flush(frame* fs) {
-			if (fs->dirty) {
-				const auto ok = write(fs->pid, fs->data);
-				if (ok) {
-					fs->dirty = false;
+		void flush(pid_type pid) {
+			if (pid == invalid_pid) {
+				return;
+			}
+			if (auto itr = cache_.find(pid); itr != cache_.end()) {
+				auto fs = itr->second;
+				flush(fs);
+				return;
+			}
+			auto used = first_used_;
+			while (used) {
+				if (used->pid() == pid) {
+					flush(used);
+					return;
 				}
+				used = used->next;
 			}
 		}
 
-		void evict(pid_type pid, bool push_free = false) {
+		// TODO: remove this call when page_allocator is implemented
+		underlying_device_type& underlying_device() noexcept {
+			return *device_;
+		}
+		
+		// TODO: remove this call when page_allocator is implemented
+		const underlying_device_type& underlying_device() const noexcept {
+			return *device_;
+		}
+
+		bool valid_id(pid_type pid) const {
+			return pid < (device_->blocks_count());
+		}
+
+		auto page_size() const noexcept {
+			return block_size();
+		}
+
+		auto pages_count() noexcept {
+			return device_->blocks_count();
+		}
+
+		void evict(pid_type pid) {
+			evict(pid, true);
+		}
+
+		void evict(pid_type pid, bool push_free) {
 			auto itr = cache_.find(pid);
 			if (itr != cache_.end()) {
 				auto fs = itr->second;
@@ -348,6 +404,17 @@ namespace fulla::storage {
 				cache_.erase(itr);
 				if (push_free) {
 					push_frame_freed(fs);
+				}
+			}
+		}
+
+	//private:
+
+		void flush(frame* fs) {
+			if (fs->dirty) {
+				const auto ok = write(fs->pid, fs->data);
+				if (ok) {
+					fs->dirty = false;
 				}
 			}
 		}
@@ -365,16 +432,8 @@ namespace fulla::storage {
 			return id < frames_.size();
 		}
 
-		bool valid_pid(pid_type pid) const {
-			return pid < (device_->blocks_count());
-		}
-
 		auto block_size() const noexcept {
 			return device_->block_size();
-		}
-
-		auto page_size() const noexcept {
-			return block_size();
 		}
 
 		void push_frame_freed(frame* s) {

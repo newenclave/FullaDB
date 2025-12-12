@@ -11,23 +11,29 @@
 #include <variant>
 
 #include "fulla/core/debug.hpp"
+#include "fulla/core/concepts.hpp"
 #include "fulla/long_store/concepts.hpp"
 
 #include "fulla/page/header.hpp"
 #include "fulla/page/page_view.hpp"
 #include "fulla/page/long_store.hpp"
+#include "fulla/page/metadata.hpp"
+
 #include "fulla/storage/block_device.hpp"
 #include "fulla/storage/buffer_manager.hpp"
+#include "fulla/page_allocator/base.hpp"
 
 namespace fulla::long_store {
 
-	struct default_long_store_index_values {
+	struct default_long_store_descriptor {
+		using header_metadata_type = page::empty_metadata;
+		using chunk_metadata_type = page::empty_metadata;
 		constexpr static const std::uint16_t header_kind_value = 10;
 		constexpr static const std::uint16_t chunk_kind_value = 11;
 	};
 
-	template <storage::RandomAccessBlockDevice DeviceT, typename PidT = std::uint32_t,
-		concepts::LongStoreIndexValues Indices = default_long_store_index_values>
+	template <page_allocator::concepts::PageAllocator PaT,
+		concepts::LongStoreDescriptor Descriptor = default_long_store_descriptor>
 	class handle {
 
 		struct page_iterator;
@@ -35,14 +41,18 @@ namespace fulla::long_store {
 
 	public:
 
-		constexpr static const std::uint16_t header_kind_value = Indices::header_kind_value;
-		constexpr static const std::uint16_t chunk_kind_value = Indices::chunk_kind_value;
+		using page_allocator_type = PaT;
+		using pid_type = typename page_allocator_type::pid_type;
+		using device_type = typename page_allocator_type::underlying_device_type;
+
+		constexpr static const std::uint16_t header_kind_value = Descriptor::header_kind_value;
+		constexpr static const std::uint16_t chunk_kind_value = Descriptor::chunk_kind_value;
+		using header_metadata_type = Descriptor::header_metadata_type;
+		using chunk_metadata_type = Descriptor::chunk_metadata_type;
 
 		static_assert(header_kind_value != chunk_kind_value, "values must not be equal");
 
-		using device_type = DeviceT;
-		using pid_type = PidT;
-		using buffer_manager_type = storage::buffer_manager<device_type, pid_type>;
+		using buffer_manager_type = page_allocator_type;
 		using page_handle = typename buffer_manager_type::page_handle;
 		using header_type = page::long_store_header;
 		using chunk_type = page::long_store_chunk;
@@ -68,6 +78,7 @@ namespace fulla::long_store {
 			std::size_t offset{ 0 };
 		};
 
+		handle() = default;
 		handle(buffer_manager_type& mgr, pid_type header_page)
 			: mgr_(&mgr) 
 			, header_page_(header_page)
@@ -82,7 +93,7 @@ namespace fulla::long_store {
 		}
 
 		bool is_valid_pid(pid_type pid) const noexcept {
-			return (mgr_ != nullptr) && mgr_->valid_pid(pid);
+			return (mgr_ != nullptr) && mgr_->valid_id(pid);
 		}
 
 		std::size_t size() {
@@ -980,28 +991,39 @@ namespace fulla::long_store {
 		}
 
 		auto create_header() {
-			auto ph = mgr_->create(true);
+			auto ph = mgr_->allocate();
 			header_page_ = ph.pid();
 			page_view_type pv{ ph.rw_span() };
-			pv.header().init(header_kind_value, mgr_->block_size(), ph.pid(), sizeof(header_type));
+			pv.header().init(header_kind_value, 
+				mgr_->page_size(), ph.pid(), 
+				sizeof(header_type), page::metadata_size<header_metadata_type>());
 			pv.get_slots_dir().init();
 			auto* sh = pv.subheader<header_type>();
 			sh->total_size = 0;
 			sh->data.size = 0;
 			sh->next = invalid_pid;
 			sh->last = header_page_;
+			if constexpr (core::concepts::HasInit<header_metadata_type>) {
+				pv.metadata_as<header_metadata_type>()->init();
+			}
 			return header_handle{ ph };
 		}
 
 		auto create_chunk() {
-			auto ph = mgr_->create(true);
+			auto ph = mgr_->allocate();
 			page_view_type pv{ ph.rw_span() };
-			pv.header().init(chunk_kind_value, mgr_->block_size(), ph.pid(), sizeof(chunk_type));
+			pv.header().init(chunk_kind_value,
+				mgr_->page_size(), ph.pid(), 
+				sizeof(chunk_type), page::metadata_size<chunk_metadata_type>());
 			pv.get_slots_dir().init();
 			auto* sh = pv.subheader<chunk_type>();
 			sh->data.size = 0;
 			sh->next = invalid_pid;
 			sh->prev = invalid_pid;	
+			
+			if constexpr (core::concepts::HasInit<chunk_metadata_type>) {
+				pv.metadata_as<chunk_metadata_type>()->init();
+			}
 
 			/// fixing the links
 			auto hdr = load_header();

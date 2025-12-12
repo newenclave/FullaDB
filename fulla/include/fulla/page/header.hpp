@@ -37,19 +37,20 @@ namespace fulla::page {
     FULLA_PACKED_STRUCT_BEGIN
     struct page_header {
         word_u16 kind {0};         // page_kind
-        word_u16 reserved {0};     //
-
         word_u16 subhdr_size{ 0 }; // size of type-specific subheader right after page_header
+
+        word_u16 metadata_size{ 0 };     //
         word_u16 page_end{ 0 };    // full page size
 
         word_u32 self_pid {0};     // optional: page id (can be eliminated if manager tracks PID)
         word_u32 crc {0};          // reserved: page checksum
 
         // Initialize header fields for a fresh page buffer.
-        void init(word_u16::word_type k, std::size_t page_size, std::uint32_t self, std::size_t subheader_size = 0) {
+        void init(word_u16::word_type k, std::size_t page_size, std::uint32_t self, 
+                    std::size_t subheader_size = 0, std::size_t metadata_sz = 0) {
             kind = static_cast<word_u16::word_type>(k);
-            self_pid = self;
-            reserved = 0;
+            self_pid = static_cast<word_u32::word_type>(self);
+            metadata_size = static_cast<word_u16::word_type>(metadata_sz);
             page_end = static_cast<word_u16::word_type>(page_size);
             subhdr_size = static_cast<word_u16::word_type>(subheader_size);
             crc = 0xBAADF00D;
@@ -66,19 +67,41 @@ namespace fulla::page {
         byte* data() noexcept {
             return reinterpret_cast<byte*>(this);
         }
+        
         const byte* data() const noexcept {
             return reinterpret_cast<const byte*>(this);
         }
+    
+        core::byte_view metadata() const noexcept {
+            const auto begin = data() + header_subheader_size();
+            const auto end = begin + metadata_size.get();
+            return { begin, end };
+        }
+
+        core::byte_span metadata() noexcept {
+            auto begin = data() + header_subheader_size();
+            auto end = begin + metadata_size.get();
+            return { begin, end };
+        }
 
         word_u16::word_type base() const {
-            return static_cast<word_u16::word_type>(header_size() + subhdr_size);
+            return all_headers_size();
         }
 
         word_u16::word_type capacity() const {
-            return page_end - static_cast<word_u16::word_type>(header_size() + subhdr_size);
+            return page_end - all_headers_size();
         }
 
     private:
+
+        word_u16::word_type header_subheader_size() const noexcept {
+            return static_cast<word_u16::word_type>(header_size()
+                + subhdr_size.get());
+        }
+
+        word_u16::word_type all_headers_size() const noexcept {
+            return header_subheader_size() + metadata_size.get();
+        }
 
     } FULLA_PACKED;
     FULLA_PACKED_STRUCT_END
