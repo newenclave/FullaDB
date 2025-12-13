@@ -241,8 +241,35 @@ namespace {
 			block_device_type dev(filename, DEFAULT_PAGE_SIZE);
 			root_type root(dev, DEFAULT_CACHE_SIZE);
 
-			std::cerr << "Cat command not yet fully implemented\n";
-			std::cerr << "(File reading API needs to be exposed in file_handle)\n";
+			auto dir = root.open_root();
+			if (!dir.is_valid()) {
+				std::cerr << "Failed to open root directory\n";
+				return 1;
+			}
+
+			auto [parent_dir, file_name] = navigate_to_parent(std::move(dir), path);
+			if (!parent_dir.is_valid()) {
+				std::cerr << "Parent directory not found\n";
+				return 1;
+			}
+
+			auto file = parent_dir.open_file(file_name);
+			if (file.is_valid()) {
+				auto hdl = file.open();
+				if (hdl.is_valid()) {
+					std::string data(128, '\n');
+					while (!hdl.is_endg()) {
+						auto read = hdl.read(reinterpret_cast<core::byte *>(data.data()), data.size());
+						std::cout.write(data.data(), read);
+					}
+				}
+				return 0;
+			}
+
+			std::cerr << "Failed to create file\n";
+			return 1;
+
+
 			return 1;
 		}
 		catch (const std::exception& e) {

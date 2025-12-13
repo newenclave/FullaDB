@@ -374,7 +374,18 @@ namespace fullafs {
 			}
 			return {};
 		}
-
+		
+		file_handle_type open_file(const std::string& name) {
+			if (!is_valid()) {
+				return {};
+			}
+			auto itr = find(name);
+			if (itr != end() && itr->is_file()) {
+				return file_handle_type(itr->page_id(), *allocator_);
+			}
+			return {};
+		}
+		
 		directory_handle mkdir(const std::string& name) {
 			// change this all to exception driven error handling
 			if (!is_valid()) {

@@ -88,8 +88,24 @@ namespace fulla::long_store {
 			, spos_(0)
 		{}
 
+		bool is_endg() noexcept {
+			auto littr = last_iterator();
+			auto size = littr.get_size();
+			return (littr.current_pid == gpage_) && (size == gpos_);
+		}
+
+		bool is_endp() noexcept {
+			auto littr = last_iterator();
+			auto size = littr.get_size();
+			return (littr.current_pid == spage_) && (size == spos_);
+		}
+
 		bool is_open() const noexcept {
 			return (mgr_ != nullptr) && is_valid_pid(header_page_);
+		}
+
+		bool is_valid() const noexcept {
+			return is_open();
 		}
 
 		bool is_valid_pid(pid_type pid) const noexcept {

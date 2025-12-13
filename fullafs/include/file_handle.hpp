@@ -62,6 +62,13 @@ namespace fullafs {
 			return header_page_;
 		}
 
+		auto open() {
+			if (is_valid()) {
+				return store_handle_type(*allocator_, header_page_);
+			}
+			return store_handle_type{};
+		}
+
 	private:
 
 		struct header_handle : public storage::handle_base<allocator_type, fulla::page::long_store_header> {
@@ -82,13 +89,6 @@ namespace fullafs {
 				return pv.metadata_as<page::file_metadata>();
 			}
 		};
-
-		auto open() {
-			if (is_valid()) {
-				return fulla::long_store::handle(*allocator_, header_page_);
-			}
-			return {};
-		}
 
 		auto open_header() {
 			if (is_valid()) {
