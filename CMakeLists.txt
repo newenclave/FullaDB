@@ -32,6 +32,16 @@ option(FULLADB_BUILD_TESTS "Build tests target" ON)
 option(FULLADB_BUILD_FULLA_FS "Build fulla-fs test project target" ON)
 
 if (FULLADB_BUILD_FULLA_FS)
+    
+include(FetchContent)
+    FetchContent_Declare(
+        replxx
+        GIT_REPOSITORY https://github.com/AmokHuginnsson/replxx.git
+        GIT_TAG        release-0.0.4
+    )
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(replxx)
+
     file(GLOB_RECURSE FULLAFS_HEADERS
         "${CMAKE_CURRENT_SOURCE_DIR}/fullafs/include/*.hpp"
     )
@@ -40,6 +50,7 @@ if (FULLADB_BUILD_FULLA_FS)
         fullafs/main.cpp
         ${FULLAFS_HEADERS}
     )
+    target_link_libraries(fullafs PRIVATE fulladb replxx)  # Link replxx
     target_link_libraries(fullafs PRIVATE fulladb)    
     target_include_directories(fullafs PRIVATE ${FULLA_HEADERS})
     target_include_directories(fullafs PRIVATE fullafs/include)
@@ -57,6 +68,8 @@ if (FULLADB_BUILD_FULLA_FS)
     target_include_directories(fullafs_tests PRIVATE ${FULLA_HEADERS})
     target_include_directories(fullafs_tests PRIVATE fullafs)
     target_include_directories(fullafs_tests PRIVATE fullafs/include)
+    target_compile_definitions(fullafs_tests PRIVATE REPLXX_STATIC)
+    target_compile_definitions(fullafs PRIVATE REPLXX_STATIC)
 
 endif()
 

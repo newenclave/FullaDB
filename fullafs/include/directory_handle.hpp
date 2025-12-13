@@ -34,13 +34,14 @@ namespace fullafs {
 		using page_view_type = typename allocator_type::page_view_type;
 
 		struct root_accessor {
-			
+
 			root_accessor(root_accessor&&) = default;
 			root_accessor& operator = (root_accessor&&) = default;
 
 			root_accessor(directory_handle* dir)
 				: dir_(dir)
-			{ }
+			{
+			}
 
 			std::tuple<pid_type, bool> load_root() {
 				access_handle hdr(dir_->open());
@@ -71,8 +72,9 @@ namespace fullafs {
 		struct access_handle : public storage::handle_base<allocator_type, page::directory_header> {
 			access_handle(page_handle ph)
 				: storage::handle_base<allocator_type, page::directory_header>(std::move(ph))
-			{}
-			
+			{
+			}
+
 			void set_parent(pid_type p) noexcept {
 				this->get()->parent = p;
 			}
@@ -148,7 +150,7 @@ namespace fullafs {
 
 			const page::entry_descriptor* descriptor() const noexcept {
 				if (value_.size() >= sizeof(page::entry_descriptor)) {
-					return reinterpret_cast<const page::entry_descriptor *>(value_.data());
+					return reinterpret_cast<const page::entry_descriptor*>(value_.data());
 				}
 				return nullptr;
 			}
@@ -187,7 +189,7 @@ namespace fullafs {
 				if (!key_.empty()) {
 					name_view_ = key_;
 				}
-				if (auto *desc = descriptor()) {
+				if (auto* desc = descriptor()) {
 					entry_type_ = static_cast<core::name_type>(desc->kind.get());
 				}
 			}
@@ -272,10 +274,37 @@ namespace fullafs {
 		};
 
 		directory_handle() = default;
-		directory_handle(const directory_handle&) = default;
-		directory_handle& operator = (const directory_handle&) = default;
-		directory_handle(directory_handle &&) = default;
-		directory_handle& operator = (directory_handle &&) = default;
+		directory_handle(const directory_handle& other)
+			: header_pid_(other.header_pid_)
+			, allocator_(other.allocator_)
+			, bpt_(tree_type(*allocator_, fulla::bpt::paged::settings{}, root_accessor(this)))
+		{
+			bpt_->set_rebalance_policy(fulla::bpt::policies::rebalance::neighbor_share);
+		}
+
+		directory_handle& operator = (const directory_handle& other) {
+			header_pid_ = other.header_pid_;
+			allocator_ =  other.allocator_;
+			bpt_ = tree_type(*allocator_, fulla::bpt::paged::settings{}, root_accessor(this));
+			bpt_->set_rebalance_policy(fulla::bpt::policies::rebalance::neighbor_share);
+			return *this;
+		}
+
+		directory_handle(directory_handle&& other)
+			: header_pid_(std::move(other.header_pid_))
+			, allocator_(other.allocator_)
+			, bpt_(tree_type(*allocator_, fulla::bpt::paged::settings{}, root_accessor(this)))
+		{
+			bpt_->set_rebalance_policy(fulla::bpt::policies::rebalance::neighbor_share);
+		}
+
+		directory_handle& operator = (directory_handle&& other) {
+			header_pid_ = std::move(other.header_pid_);
+			allocator_ = std::move(other.allocator_);
+			bpt_ = tree_type(*allocator_, fulla::bpt::paged::settings{}, root_accessor(this));
+			bpt_->set_rebalance_policy(fulla::bpt::policies::rebalance::neighbor_share);
+			return *this;
+		}
 
 		directory_handle(pid_type page, allocator_type& alloc)
 			: header_pid_(page)

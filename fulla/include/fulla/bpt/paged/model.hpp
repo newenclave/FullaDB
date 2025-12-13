@@ -610,6 +610,10 @@ namespace fulla::bpt::paged {
         static_assert(concepts::LeafNode<leaf_type, key_out_type, key_like_type, key_borrow_type, 
                 value_out_type, value_in_type, value_borrow_type>);
 
+        model(model&&) = default;
+        model& operator = (model&&) = default;
+        model(const model&) = default;
+        model& operator = (const model&) = default;
 
         model(buffer_manager_type& mgr, settings sett, root_manager_type root)
             : accessor_(mgr, std::move(sett), std::move(root))
@@ -631,6 +635,11 @@ namespace fulla::bpt::paged {
 
             using leaf_type = model::leaf_type;
             using inode_type = model::inode_type;
+
+            accessor_type(accessor_type&&) = default;
+            accessor_type& operator = (accessor_type&&) = default;
+            accessor_type(const accessor_type&) = default;
+            accessor_type& operator = (const accessor_type&) = default;
 
             accessor_type(buffer_manager_type& mgr, settings sett, root_manager_type root)
                 : mgr_(&mgr)
