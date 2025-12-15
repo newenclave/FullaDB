@@ -226,8 +226,32 @@ namespace {
 			block_device_type dev(filename, DEFAULT_PAGE_SIZE);
 			root_type root(dev, DEFAULT_CACHE_SIZE);
 
-			std::cerr << "Echo command not yet fully implemented\n";
-			std::cerr << "(File writing API needs to be exposed in file_handle)\n";
+			auto dir = root.open_root();
+			if (!dir.is_valid()) {
+				std::cerr << "Failed to open root directory\n";
+				return 1;
+			}
+
+			auto [parent_dir, file_name] = navigate_to_parent(std::move(dir), path);
+			if (!parent_dir.is_valid()) {
+				std::cerr << "Parent directory not found\n";
+				return 1;
+			}
+
+			auto fil_itr = parent_dir.find(file_name);
+			if (fil_itr == parent_dir.end()) {
+				auto new_fil = parent_dir.touch(file_name);
+				if (!new_fil.is_valid()) {
+					std::cerr << "Failed to create file\n";
+					return 1;
+				}
+			}
+			auto file = parent_dir.open_file(file_name);
+			auto fh = file.open();
+			if (content.size() == file.open().append(core::as_byte_view(content).data(), content.size())) {
+				return 0;
+			}
+			std::cerr << "Failed to write file\n";
 			return 1;
 		}
 		catch (const std::exception& e) {

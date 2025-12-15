@@ -165,6 +165,7 @@ namespace fulla::long_store {
 				return 0;
 			}
 			auto it = last_iterator();
+			it.offset_in_page = it.get_size();
 			return write_impl(it, buf, len);
 		}
 
