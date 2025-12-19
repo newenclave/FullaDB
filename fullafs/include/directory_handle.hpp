@@ -43,18 +43,24 @@ namespace fullafs {
 			{
 			}
 
-			std::tuple<pid_type, bool> load_root() {
+			bool has_root() const {
+				access_handle hdr(dir_->open());
+				if (hdr.is_valid()) {
+					const auto eroot = hdr.entry_root();
+					return dir_->allocator_->valid_id(eroot);
+				}
+				return false;
+			}
+
+			pid_type get_root() {
 				access_handle hdr(dir_->open());
 				if (hdr.is_valid()) {
 					const auto eroot = hdr.entry_root();
 					if (dir_->allocator_->valid_id(eroot)) {
-						return { eroot, true };
-					}
-					else {
-						return { eroot, false };
+						return eroot;
 					}
 				}
-				return { dir_->allocator_->invalid_pid, false };
+				return dir_->allocator_->invalid_pid;
 			}
 
 			void set_root(pid_type pid) {

@@ -13,4 +13,12 @@ namespace fulla::core::concepts {
     concept HasInit = requires(T t) {
         { t.init() } -> std::same_as<void>;
     };
+
+    template<typename T, typename NodeIdT>
+    concept RootManager = requires(T t, NodeIdT id) {
+        { t.get_root() } -> std::convertible_to<NodeIdT>;
+        { t.set_root(id) } -> std::same_as<void>;
+        { t.has_root() } -> std::convertible_to<bool>;
+    };
+
 } // namespace fulla::core

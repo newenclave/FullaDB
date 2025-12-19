@@ -10,6 +10,7 @@
 
 #include <cassert>
 #include "fulla/core/types.hpp"
+#include "fulla/core/pack.hpp"
 
 namespace fulla::page::slots { 
 
@@ -19,8 +20,7 @@ namespace fulla::page::slots {
     using core::byte_view;
     using core::byte_buffer;
 
-    constexpr static const typename core::word_u16::word_type SLOT_INVALID =
-        std::numeric_limits<typename core::word_u16::word_type>::max();
+    constexpr static const typename core::word_u16::word_type SLOT_INVALID = word_u16::max();
     constexpr static const auto SLOT_FREE = SLOT_INVALID;
 
     template <typename SdT>
@@ -57,6 +57,7 @@ namespace fulla::page::slots {
 		fixed,
 	};
 
+    FULLA_PACKED_STRUCT_BEGIN
     struct slot_entry {
         word_u16 off;
         word_u16 len;
@@ -68,11 +69,11 @@ namespace fulla::page::slots {
             word_u16 free_beg{ 0 };     // offset to the first free byte in payload area (grows upward)
             word_u16 free_end{ 0 };     // offset to the last free byte+1 from the end (grows downward)
             word_u16 freed;             // first freed slot.
-        };
+        } FULLA_PACKED;
 
         struct free_slot_type {
             word_u16 next;
-        };        
+        } FULLA_PACKED;
     }
 
     namespace variadic {
@@ -81,14 +82,15 @@ namespace fulla::page::slots {
             word_u16 free_beg{ 0 };     // offset to the first free byte in payload area (grows upward)
             word_u16 free_end{ 0 };     // offset to the last free byte+1 from the end (grows downward)
             word_u16 freed;             // first freed slot.
-        };
+        } FULLA_PACKED;
 
         struct free_slot_type {
             word_u16 prev;
             word_u16 next;
             word_u16 len;
-        };
+        } FULLA_PACKED;
     }
+    FULLA_PACKED_STRUCT_END
 
     template <directory_type Type, std::size_t AlignV = 4>
     struct directory_view {

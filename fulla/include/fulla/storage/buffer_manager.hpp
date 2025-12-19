@@ -85,6 +85,7 @@ namespace fulla::storage {
 			frame* prev = nullptr;
 		};
 
+		// TODO: create a concept for this page_handle
 		struct page_handle {
 
 			using pid_type = PidT;

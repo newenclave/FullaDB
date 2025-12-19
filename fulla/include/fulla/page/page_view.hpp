@@ -18,6 +18,7 @@
 #include "fulla/core/bytes.hpp"
 #include "fulla/core/types.hpp"
 #include "fulla/page/header.hpp"
+#include "fulla/page/metadata.hpp"
 #include "fulla/page/slot_directory.hpp"
 
 namespace fulla::page {
@@ -113,12 +114,25 @@ namespace fulla::page {
             return header().page_end - headers_len();
         }
 
+        template <typename SubHdrT, typename MetadataT>
+        constexpr static std::size_t capacity_max(std::size_t page_max) {
+            return page_max - (sizeof(page_header) + (sizeof(SubHdrT) + page::metadata_size<MetadataT>()));
+        }
+
         SdT get_slots_dir() {
-            return SdT(get_slot_directory());
+            return SdT(get_span());
         }
 
         SdT get_slots_dir() const {
-            return SdT(get_slot_directory());
+            return SdT(get_span());
+        }
+
+        auto ro_span() const {
+            return get_span();
+        }
+
+        auto rw_span() {
+            return get_span();
         }
 
     private:
@@ -127,7 +141,7 @@ namespace fulla::page {
             return header().base();
         }
 
-        SpanT get_slot_directory() const {
+        SpanT get_span() const {
             return { page_.data() + headers_len(),  capacity() };
         }
 

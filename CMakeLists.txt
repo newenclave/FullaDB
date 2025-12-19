@@ -94,6 +94,7 @@ if (FULLADB_BUILD_TESTS)
         tests/test_bpt_page_model.cpp
         tests/test_bpt_create_dictionary.cpp
         tests/test_long_storage.cpp
+        tests/test_radix_trie.cpp
     )
     
     target_link_libraries(tests PRIVATE fulladb)    

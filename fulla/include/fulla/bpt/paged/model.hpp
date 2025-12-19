@@ -74,19 +74,17 @@ namespace fulla::bpt::paged {
         { klt.operator ()(a, b) } -> std::convertible_to<bool>;
     };
 
-    template<typename T, typename NodeIdT>
-    concept RootManager = requires(T t, NodeIdT id) {
-        { t.load_root() } -> std::convertible_to<std::tuple<NodeIdT, bool>>;
-        { t.set_root(id) } -> std::same_as<void>;
-    };
-
     template<typename NodeIdT>
     struct memory_root_manager {
-        std::tuple<NodeIdT, bool> load_root() const {
+        bool has_root() const {
+            return root_.has_value();
+        }
+
+        NodeIdT get_root() const {
             if (root_) {
-                return { *root_, true };
+                return *root_;
             }
-            return { NodeIdT{}, false };
+            return NodeIdT{};
         }
 
         void set_root(NodeIdT id) {
@@ -106,7 +104,7 @@ namespace fulla::bpt::paged {
 
     template <page_allocator::concepts::PageAllocator PageAllocatorT,
         ModelKeyLessConcept KeyLessT = page::record_less,
-        RootManager<typename PageAllocatorT::pid_type> RootManagerT = memory_root_manager<typename PageAllocatorT::pid_type>,
+        core::concepts::RootManager<typename PageAllocatorT::pid_type> RootManagerT = memory_root_manager<typename PageAllocatorT::pid_type>,
         bpt::concepts::BptNodeDescriptor Descriptor = default_bpt_descriptor
     >
     struct model {
@@ -779,10 +777,8 @@ namespace fulla::bpt::paged {
             }
 
             std::tuple<node_id_type, bool> load_root() {
-                const auto value = root_.load_root();
-                return std::get<0>(value) == invalid_node_value 
-                    ? std::make_tuple(invalid_node_value, false)
-                    : value;
+                const auto value = root_.get_root();
+                return std::make_tuple(invalid_node_value, value != invalid_node_value);
             }
 
             void set_root(node_id_type id) {
