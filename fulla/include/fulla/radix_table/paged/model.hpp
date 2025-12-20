@@ -112,8 +112,6 @@ namespace fulla::radix_table::paged {
 		auto get_table(index_type id) {
 			auto values = get_values();
 
-			const auto lvl = get_level();
-
 			DB_ASSERT(id < values.size(), "Bad value");
 			DB_ASSERT(get_level() > 0, "Bad level");
 
