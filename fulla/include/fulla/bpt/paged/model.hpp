@@ -76,23 +76,26 @@ namespace fulla::bpt::paged {
 
     template<typename NodeIdT>
     struct memory_root_manager {
+
+        using root_type = NodeIdT;
+
         bool has_root() const {
             return root_.has_value();
         }
 
-        NodeIdT get_root() const {
+        root_type get_root() const {
             if (root_) {
                 return *root_;
             }
             return NodeIdT{};
         }
 
-        void set_root(NodeIdT id) {
-            root_ = std::optional<NodeIdT>(id);
+        void set_root(root_type id) {
+            root_ = std::optional<root_type>(id);
         }
 
     private:
-        std::optional<NodeIdT> root_;
+        std::optional<root_type> root_;
     };
 
     struct default_bpt_descriptor {
@@ -104,7 +107,7 @@ namespace fulla::bpt::paged {
 
     template <page_allocator::concepts::PageAllocator PageAllocatorT,
         ModelKeyLessConcept KeyLessT = page::record_less,
-        core::concepts::RootManager<typename PageAllocatorT::pid_type> RootManagerT = memory_root_manager<typename PageAllocatorT::pid_type>,
+        core::concepts::RootManager RootManagerT = memory_root_manager<typename PageAllocatorT::pid_type>,
         bpt::concepts::BptNodeDescriptor Descriptor = default_bpt_descriptor
     >
     struct model {

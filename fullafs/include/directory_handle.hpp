@@ -35,6 +35,8 @@ namespace fullafs {
 
 		struct root_accessor {
 
+			using root_type = pid_type;
+
 			root_accessor(root_accessor&&) = default;
 			root_accessor& operator = (root_accessor&&) = default;
 

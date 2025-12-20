@@ -24,6 +24,13 @@ namespace {
 	using fulla::core::byte_span;
 	using fulla::core::byte;
 
+	std::uint32_t get_random_uint(std::uint32_t min, std::uint32_t max) {
+		static std::random_device rd;
+		static std::mt19937 gen(rd());
+		std::uniform_int_distribution<std::size_t> len_dist(min, max);
+		return static_cast<std::uint32_t>(len_dist(gen));
+	}
+
 	std::string get_random_string(std::size_t min_len, std::size_t max_len = 20) {
 		static std::random_device rd;
 		static std::mt19937 gen(rd());
@@ -74,10 +81,14 @@ TEST_SUITE("radix_table/trie/memory") {
 			auto val = trie.get(i);
 			CHECK(tests[i] == val);
 		}
+
+		CHECK(!trie.has(MAXIMUM_VALUES + 1));
+		trie.remove(0);
+		CHECK(trie.get(0) == "");
 	}
 
 	TEST_CASE("paged/allocator") {
-		device_type dev(4096);
+		device_type dev(4 * 1024);
 		page_allocator_type pal(dev, 10);
 		radix_table::paged::allocator<page_allocator_type> allocator(pal);
 
@@ -91,13 +102,49 @@ TEST_SUITE("radix_table/trie/memory") {
 		auto testlvl = tbl.get_table(10);
 		CHECK_EQ(testlvl.pid(), lvl.pid());
 
+		auto parent = lvl.get_parent();
+		CHECK(parent.pid() == tbl.pid());
+
 		CHECK(tbl.holds_table(10));
 		CHECK(!tbl.holds_value(10));
 		CHECK(!tbl.holds_value(0));
 
 		CHECK(lvl.holds_value(0));
-		CHECK(!tbl.holds_table(0));
-		CHECK(!tbl.holds_value(10));
+		CHECK(!lvl.holds_table(0));
+		CHECK(!lvl.holds_value(10));
+
+		CHECK(lvl.size() == 1);
+		lvl.remove(0);
+		CHECK(lvl.size() == 0);
+
+		auto tbl_parent = tbl.get_parent();
+		CHECK(!tbl_parent.is_valid());
+	}
+
+	TEST_CASE("paged/model") {
+		device_type dev(4 * 1024);
+		page_allocator_type pal(dev, 10);
+		using model_type = radix_table::paged::model<page_allocator_type>;
+		using page_trie_type = radix_table::trie<std::uint32_t, model_type>;
+		using page_test_map_type = std::map<std::uint32_t, std::uint32_t>;
+
+		page_trie_type trie(pal);
+		page_test_map_type tests;
+
+		for (int i = 0; i < MAXIMUM_VALUES; ++i) {
+			auto value = get_random_uint(5, 20);
+			tests.emplace(i, value);
+			trie.set(i, value);
+		}
+
+		for (int i = 0; i < MAXIMUM_VALUES; ++i) {
+			auto val = trie.get(i);
+			CHECK(tests[i] == val);
+		}
+
+		CHECK(!trie.has(MAXIMUM_VALUES + 1));
+		trie.remove(0);
+		CHECK(trie.get(0) == 0);
 
 	}
 }

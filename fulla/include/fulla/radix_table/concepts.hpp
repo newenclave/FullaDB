@@ -19,6 +19,11 @@ namespace fulla::radix_table::concepts {
 		typename RLT::value_in_type;
 		typename RLT::index_type;
 
+		{ rlt.size() } -> std::convertible_to<std::size_t>;
+
+		{ rlt.set_parent(rlt) } -> std::same_as<void>;
+		{ rlt.get_parent() } -> std::convertible_to<RLT>;
+
 		{ rlt.get_level() } -> std::convertible_to<typename RLT::index_type>;
 		{ rlt.set_table(id, rlt) } -> std::same_as<void>;
 		{ rlt.get_table(id) } -> std::convertible_to<RLT>;
@@ -32,6 +37,7 @@ namespace fulla::radix_table::concepts {
 		{ rlt.holds_table(id) } -> std::convertible_to<bool>;
 
 		{ rlt.is_valid() } -> std::convertible_to<bool>;
+		{ rlt.is_same(rlt) } -> std::convertible_to<bool>;
 	};
 
 	template <typename AllocT>
@@ -55,7 +61,7 @@ namespace fulla::radix_table::concepts {
 
 		requires(RadixLevel<typename MT::radix_level_type>);
 		requires(Allocator<typename MT::allocator_type>);
-		requires(core::concepts::RootManager<typename MT::root_accessor_type, typename MT::radix_level_type>);
+		requires(core::concepts::RootManager<typename MT::root_accessor_type>);
 
 		{ model.split_factor() } -> std::convertible_to<unsigned int>;
 		{ model.get_allocator() } -> std::convertible_to<typename MT::allocator_type&>;

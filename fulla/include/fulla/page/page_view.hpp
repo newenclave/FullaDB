@@ -111,7 +111,7 @@ namespace fulla::page {
         }
 
         std::size_t capacity() const {
-            return header().page_end - headers_len();
+            return header().capacity();
         }
 
         template <typename SubHdrT, typename MetadataT>

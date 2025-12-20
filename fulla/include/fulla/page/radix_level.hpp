@@ -19,11 +19,15 @@ namespace fulla::page {
     struct radix_value{
         word_u32 value { word_u32::max() };
         word_u32 gen {0};
-        word_u32 reserved { word_u32::max() };
+        core::byte type{ 0 };
+        core::byte reserved[3] { };
         void init() {
             value = word_u32::max();
             gen = 0;
-            reserved = word_u32::max();
+            type = core::byte{ 0 };
+            reserved[0] = core::byte{ 0 };
+            reserved[1] = core::byte{ 0 };
+            reserved[2] = core::byte{ 0 };
         }
     } FULLA_PACKED;
     
@@ -34,7 +38,6 @@ namespace fulla::page {
         void init(word_u32::word_type p, word_u16::word_type l) {
             parent = p;
             level = l;
-
         }
     } FULLA_PACKED;
     FULLA_PACKED_STRUCT_END

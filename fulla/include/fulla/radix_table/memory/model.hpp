@@ -61,6 +61,25 @@ namespace fulla::radix_table::memory {
 		radix_level() = default;
 		radix_level(typename chunk_type::sptr_type d) : data(d) {}
 
+		void set_parent(radix_level &lvl) {
+			parent = lvl.data;
+		}		
+
+		std::size_t size() const {
+			if (is_valid()) {
+				std::size_t res = 0;
+				for (auto& v : data->data) {
+					res += (!std::holds_alternative<chunk_type::none_type>(v));
+				}
+				return res;
+			}
+			return 0;
+		}
+
+		radix_level get_parent() {
+			return { parent.lock() };
+		}
+
 		void check_valid() const {
 			if (!is_valid()) {
 				throw std::runtime_error("Bad call");
@@ -75,11 +94,14 @@ namespace fulla::radix_table::memory {
 		void set_table(index_type id, radix_level rd) {
 			check_valid();
 			data->data[id] = { rd.data };
+			rd.parent = data;
 		}
 
 		radix_level get_table(index_type id) {
-			check_valid();
-			return radix_level(data->as_ptr(id));
+			if (data && data->is_ptr(id)) {
+				return radix_level(data->as_ptr(id));
+			}
+			return {};
 		}
 
 		void set_value(index_type id, value_in_type value) {
@@ -89,30 +111,40 @@ namespace fulla::radix_table::memory {
 
 		value_out_type get_value(index_type id) {
 			check_valid();
-			return data->as_value(id);
+			if (data && data->is_value(id)) {
+				return data->as_value(id);
+			}
+			return {};
 		}
 
 		void remove(index_type id) {
 			check_valid();
-			data->data[id] = { typename chunk_type::none_type{} };
+			if (data != nullptr) {
+				data->data[id] = { typename chunk_type::none_type{} };
+			}
 		}
 		
 		bool holds_value(index_type id) const noexcept {
 			check_valid();
-			return data->is_value(id);
+			return (data != nullptr) && data->is_value(id);
 		}
 
 		bool holds_table(index_type id) const noexcept {
 			check_valid();
-			return data->is_ptr(id);
+			return (data != nullptr) && data->is_ptr(id);
 		}
 
 		bool is_valid() const noexcept {
 			return data.operator bool();
 		}
 
+		bool is_same(const radix_level &rd) const noexcept {
+			return (data == rd.data) && (parent.lock() == rd.parent.lock());
+		}
+
 		using data_type = std::shared_ptr<chunk_type>;
 		data_type data;
+		std::weak_ptr<chunk_type> parent;
 	};
 
 	static_assert(concepts::RadixLevel<radix_level<int, 256>>, "");
@@ -127,13 +159,12 @@ namespace fulla::radix_table::memory {
 			return { std::make_shared<data_type>(lvl) };
 		};
 
-		void destroy(output_type val) {
-			
-		}
+		void destroy(output_type) {}
 	};
 
 	template <typename ValueT, std::size_t SplitFactor>
 	struct root_accessor {
+
 		using value_type = ValueT;
 		using root_type = radix_level<value_type, SplitFactor>;
 
@@ -156,7 +187,7 @@ namespace fulla::radix_table::memory {
 	};
 
 	static_assert(concepts::Allocator<allocator<int, 256>>, "");
-	static_assert(core::concepts::RootManager<root_accessor<int, 256>, radix_level<int, 256>>, "");
+	static_assert(core::concepts::RootManager<root_accessor<int, 256>>, "");
 
 	template <typename ValueT, std::size_t SplitFactor = 0x100>
 	struct model {

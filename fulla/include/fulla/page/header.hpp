@@ -89,7 +89,8 @@ namespace fulla::page {
         }
 
         word_u16::word_type capacity() const {
-            return page_end - all_headers_size();
+            const std::size_t end = (page_end.get() ? page_end.get() : 0x10000);
+            return static_cast<word_u16::word_type>(end - all_headers_size());
         }
 
     private:

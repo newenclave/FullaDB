@@ -42,32 +42,9 @@ namespace fulla::radix_table {
 		{}
 
 		value_out_type get(key_type key) {
-			if (get_root_accessor().has_root()) {
-				stack_buffer output;
-				auto split = split_key(key, { output });
-				if (split.empty()) {
-					auto tbl = get_level(0);
-					if (tbl.is_valid()) {
-						return tbl.get_value(0);
-					}
-					return {};
-				}
-				auto level = split.size() - 1;
-				auto current = get_level(level);
-				while (current.is_valid() && !split.empty()) {
-					if (split.size() == 1) {
-						if (current.holds_value(split[0])) {
-							return current.get_value(split[0]);
-						}
-						else {
-							return {};
-						}
-					}
-					else {
-						current = current.get_table(split[0]);
-						split = split.subspan(1);
-					}
-				}
+			auto [lvl, id] = find_level_for(key);
+			if (lvl.is_valid() && lvl.holds_value(id)) {
+				return lvl.get_value(id);
 			}
 			return {};
 		}
@@ -109,6 +86,24 @@ namespace fulla::radix_table {
 			return false;
 		}
 
+		bool has(key_type key) {
+			auto [lvl, id] = find_level_for(key);
+			if (lvl.is_valid()) {
+				return lvl.holds_value(id);
+			}
+			return false;
+		}
+
+		bool remove(key_type key) {
+			auto [lvl, id] = find_level_for(key);
+			if (lvl.is_valid() && lvl.holds_value(id)) {
+				lvl.remove(id);
+				remove_up(lvl);
+				return true;
+			}
+			return false;
+		}
+
 		allocator_type& get_allocator() {
 			return model_.get_allocator();
 		}
@@ -118,6 +113,41 @@ namespace fulla::radix_table {
 		}
 
 	private:
+
+		void remove_up(radix_level_type lvl) {
+			auto& allocator = get_allocator();
+			auto root = get_root_accessor().get_root();
+			while (lvl.is_valid() && (lvl.size() == 0)) {
+				auto parent = lvl.get_parent();
+				allocator.destroy(lvl);
+				lvl = parent;
+				if(!lvl.is_valid()) {
+					get_root_accessor().set_root(lvl);
+				}
+			}
+		}
+
+		std::tuple<radix_level_type, index_type> find_level_for(key_type key) {
+			if (get_root_accessor().has_root()) {
+				stack_buffer output;
+				auto split = split_key(key, { output });
+				if (split.empty()) {
+					return { get_level(0), index_type{0} };
+				}
+				auto level = split.size() - 1;
+				auto current = get_level(level);
+				while (current.is_valid() && !split.empty()) {
+					if (split.size() == 1) {
+						return { current, split[0] };
+					}
+					else {
+						current = current.get_table(split[0]);
+					}
+					split = split.subspan(1);
+				}
+			}
+			return { {}, index_type{0} };
+		}
 
 		radix_level_type get_create_table(radix_level_type level, index_type id) {
 			if (!level.holds_table(id)) {
@@ -184,7 +214,8 @@ namespace fulla::radix_table {
 
 			while (current.get_level() < lvl) {
 				auto new_root = allocator.create_level(current.get_level() + 1);
-				new_root.set_table(0, raccess.get_root());
+				auto old_root = raccess.get_root();
+				new_root.set_table(0, old_root);
 				raccess.set_root(std::move(new_root));
 				current = raccess.get_root();
 			}
@@ -196,6 +227,9 @@ namespace fulla::radix_table {
 				return {};
 			}
 			auto current = get_root_accessor().get_root();
+			if (current.get_level() < lvl) {
+				return {};
+			}
 			while (current.is_valid() && (current.get_level() > lvl)) {
 				current = current.get_table(0);
 			}
