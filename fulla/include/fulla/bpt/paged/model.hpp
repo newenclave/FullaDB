@@ -781,7 +781,8 @@ namespace fulla::bpt::paged {
 
             std::tuple<node_id_type, bool> load_root() {
                 const auto value = root_.get_root();
-                return std::make_tuple(invalid_node_value, value != invalid_node_value);
+                const bool exists = root_.has_root() && (value != invalid_node_value);
+                return std::make_tuple(value, exists);
             }
 
             void set_root(node_id_type id) {
