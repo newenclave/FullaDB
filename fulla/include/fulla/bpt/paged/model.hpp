@@ -765,7 +765,7 @@ namespace fulla::bpt::paged {
             bool can_merge_leafs(const leaf_type& dst, const leaf_type& src) const {
                 return page::slots::can_merge(dst.get_page().get_slots_dir(), src.get_page().get_slots_dir());
             }
-
+            
             bool can_merge_inodes(const inode_type& dst, const inode_type& src) {
                 const auto dst_slots = dst.get_page().get_slots_dir();
                 const auto src_slots = src.get_page().get_slots_dir();

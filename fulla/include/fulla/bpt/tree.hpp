@@ -1406,6 +1406,9 @@ namespace fulla::bpt {
                         auto pos = inode.key_position(key);
                         current_id = inode.get_child(pos);
                     }
+                    else {
+                        DB_ASSERT(false, "Something went wrong!");
+                    }
                 }
             }
         }

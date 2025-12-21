@@ -61,8 +61,9 @@ namespace fulla::radix_table::memory {
 		radix_level() = default;
 		radix_level(typename chunk_type::sptr_type d) : data(d) {}
 
-		void set_parent(radix_level &lvl) {
+		void set_parent(radix_level &lvl, index_type id) {
 			parent = lvl.data;
+			parent_id = id;
 		}		
 
 		std::size_t size() const {
@@ -76,8 +77,8 @@ namespace fulla::radix_table::memory {
 			return 0;
 		}
 
-		radix_level get_parent() {
-			return { parent.lock() };
+		std::tuple<radix_level, index_type> get_parent() {
+			return { { parent.lock() }, parent_id };
 		}
 
 		void check_valid() const {
@@ -95,6 +96,7 @@ namespace fulla::radix_table::memory {
 			check_valid();
 			data->data[id] = { rd.data };
 			rd.parent = data;
+			rd.parent_id = id;
 		}
 
 		radix_level get_table(index_type id) {
@@ -145,6 +147,7 @@ namespace fulla::radix_table::memory {
 		using data_type = std::shared_ptr<chunk_type>;
 		data_type data;
 		std::weak_ptr<chunk_type> parent;
+		index_type parent_id = 0;
 	};
 
 	static_assert(concepts::RadixLevel<radix_level<int, 256>>, "");
@@ -176,11 +179,11 @@ namespace fulla::radix_table::memory {
 		}
 
 		void set_root(root_type val) {
-			root = { val };
+			root = val.is_valid() ? std::optional{ val } : std::nullopt;
 		}
 
 		bool has_root() const noexcept {
-			return root.has_value();
+			return root.has_value() && root->is_valid();
 		}
 
 		std::optional<root_type> root;

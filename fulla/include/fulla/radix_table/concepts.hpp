@@ -21,8 +21,8 @@ namespace fulla::radix_table::concepts {
 
 		{ rlt.size() } -> std::convertible_to<std::size_t>;
 
-		{ rlt.set_parent(rlt) } -> std::same_as<void>;
-		{ rlt.get_parent() } -> std::convertible_to<RLT>;
+		{ rlt.set_parent(rlt, id) } -> std::same_as<void>;
+		{ rlt.get_parent() } -> std::convertible_to<std::tuple<RLT, typename RLT::index_type>>;
 
 		{ rlt.get_level() } -> std::convertible_to<typename RLT::index_type>;
 		{ rlt.set_table(id, rlt) } -> std::same_as<void>;

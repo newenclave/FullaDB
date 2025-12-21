@@ -81,16 +81,18 @@ namespace fulla::radix_table::paged {
 			return res;
 		}
 
-		void set_parent(radix_level &rlt) {
+		void set_parent(radix_level &rlt, index_type id) {
 			page_view_type pv{ page_.rw_span() };
 			pv.subheader<page::radix_level_header>()->parent = rlt.page_.pid();
+			pv.subheader<page::radix_level_header>()->parent_id = id;
 			mark_dirty();
 		}
 
-		radix_level get_parent() const {
+		std::tuple<radix_level, index_type> get_parent() const {
 			cpage_view_type pv{ page_.ro_span() };
-			auto parent = allocator_->fetch(pv.subheader<page::radix_level_header>()->parent);
-			return { *allocator_, std::move(parent) };
+			auto parent = allocator_->fetch(pv.subheader<page::radix_level_header>()->parent.get());
+			const auto parent_id = pv.subheader<page::radix_level_header>()->parent_id.get();
+			return { { *allocator_, std::move(parent) }, parent_id };
 		}
 
 		void reset_values() {
@@ -136,7 +138,7 @@ namespace fulla::radix_table::paged {
 			values[id].value = rl.pid();
 			values[id].type = static_cast<core::byte>(value_enum_type::level);
 			mark_dirty();
-			rl.set_parent(*this);
+			rl.set_parent(*this, id);
 		}
 
 		void set_value(index_type id, const value_in_type val) {
@@ -273,10 +275,10 @@ namespace fulla::radix_table::paged {
 		}
 
 		void set_root(root_type val) {
-			root = { val };
+			root = val.is_valid() ? std::optional{val} : std::nullopt;
 		}
 		bool has_root() const noexcept {
-			return root.has_value();
+			return root.has_value() && root->is_valid();
 		}
 		std::optional<root_type> root;
 	};

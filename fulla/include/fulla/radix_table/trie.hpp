@@ -118,11 +118,14 @@ namespace fulla::radix_table {
 			auto& allocator = get_allocator();
 			auto root = get_root_accessor().get_root();
 			while (lvl.is_valid() && (lvl.size() == 0)) {
-				auto parent = lvl.get_parent();
+				auto [parent, parent_id] = lvl.get_parent();
 				allocator.destroy(lvl);
 				lvl = parent;
 				if(!lvl.is_valid()) {
 					get_root_accessor().set_root(lvl);
+				}
+				else {
+					lvl.remove(parent_id);
 				}
 			}
 		}

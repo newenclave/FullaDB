@@ -59,8 +59,7 @@ namespace {
 		using base_type = page_allocator::base<RadT, PidT>;
 		using pid_type = PidT;
 		using underlying_device_type = RadT;
-		using buffer_manager_type = storage::buffer_manager<RadT, PidT>;
-		using page_handle = typename buffer_manager_type::page_handle;
+		using page_handle = typename base_type::page_handle;
 
 		constexpr static const pid_type invalid_pid = std::numeric_limits<pid_type>::max();
 
@@ -127,8 +126,10 @@ TEST_SUITE("radix_table/trie/memory") {
 		auto testlvl = tbl.get_table(10);
 		CHECK_EQ(testlvl.pid(), lvl.pid());
 
-		auto parent = lvl.get_parent();
+		auto [parent, id] = lvl.get_parent();
+
 		CHECK(parent.pid() == tbl.pid());
+		CHECK(id == 10);
 
 		CHECK(tbl.holds_table(10));
 		CHECK(!tbl.holds_value(10));
@@ -142,8 +143,10 @@ TEST_SUITE("radix_table/trie/memory") {
 		lvl.remove(0);
 		CHECK(lvl.size() == 0);
 
-		auto tbl_parent = tbl.get_parent();
-		CHECK(!tbl_parent.is_valid());
+		{
+			auto [tbl_parent, tbl_id] = tbl.get_parent();
+			CHECK(!tbl_parent.is_valid());
+		}
 	}
 
 	TEST_CASE("paged/model") {
