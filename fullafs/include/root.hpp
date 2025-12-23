@@ -5,6 +5,7 @@
 #include "fulla/core/types.hpp"
 #include "fs_page_allocator.hpp"
 #include "directory_handle.hpp"
+#include "directory_storage_handle.hpp"
 #include "page_kinds.hpp"
 
 namespace fullafs {
@@ -20,6 +21,7 @@ namespace fullafs {
 		using cpage_view_type = typename allocator_type::cpage_view_type;
 		using page_view_type = typename allocator_type::page_view_type;
 		using directory_handle = directory_handle<device_type, pid_type>;
+		using directory_storage_handle = directory_storage_handle<device_type, pid_type>;
 
 		root(device_type &dev, std::size_t cache_maximum_page = 10)
 			: allocator_(dev, cache_maximum_page)
@@ -36,7 +38,7 @@ namespace fullafs {
 		directory_handle open_root() {
 			auto sb = allocator_.fetch_superblock();
 			if (sb.is_valid()) {
-				return directory_handle(sb.root().page, allocator_);
+				return directory_handle(sb.root().page, word_u16::max(), allocator_);
 			}
 			return {};
 		}

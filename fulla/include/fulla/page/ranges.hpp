@@ -14,6 +14,7 @@
 #include "fulla/core/bytes.hpp"
 #include "fulla/page/page_view.hpp"
 #include "fulla/codec/data_view.hpp"
+#include "fulla/page/slots/directory.hpp"
 
 namespace fulla::page {
 
@@ -45,7 +46,7 @@ namespace fulla::page {
 
     // Projection: slot_entry -> byte_view through a page_view.
     // Stores a pointer to page_view; safe as long as the page_view outlives this functor.
-    template<slots::SlotDirectoryConcept SdT, SlotExtractorConcept SeT>
+    template<slots::concepts::DenseDirectory SdT, SlotExtractorConcept SeT>
     struct slot_projection {
         const page_view<SdT>* pv{nullptr};
 
@@ -63,12 +64,12 @@ namespace fulla::page {
         return record_less{};
     }
 
-    template<slots::SlotDirectoryConcept SdT>
+    template<slots::concepts::DenseDirectory SdT>
     inline slot_projection<SdT, empty_slot_extractor> make_slot_projection(const page_view<SdT>& pv) noexcept {
         return slot_projection<SdT, empty_slot_extractor>{pv};
     }
 
-    template<SlotExtractorConcept SeT, slots::SlotDirectoryConcept SdT>
+    template<SlotExtractorConcept SeT, slots::concepts::DenseDirectory SdT>
     inline slot_projection<SdT, SeT> make_slot_projection_with_extracor(const page_view<SdT>& pv) noexcept {
         return slot_projection<SdT, SeT>{pv};
     }

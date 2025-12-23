@@ -11,6 +11,7 @@
 #include <cassert>
 #include "fulla/core/types.hpp"
 #include "fulla/core/pack.hpp"
+#include "fulla/page/slots/concepts.hpp"
 
 namespace fulla::page::slots { 
 
@@ -22,35 +23,6 @@ namespace fulla::page::slots {
 
     constexpr static const typename core::word_u16::word_type SLOT_INVALID = word_u16::max();
     constexpr static const auto SLOT_FREE = SLOT_INVALID;
-
-    template <typename SdT>
-    concept SlotDirectoryConcept = requires(SdT sdt, std::size_t pos, byte_view bv, std::size_t len) {
-        typename SdT::slot_type;
-        typename SdT::directory_header;
-
-        { sdt.size() } -> std::convertible_to<std::size_t>;
-        { sdt.capacity_for(std::size_t{}) } -> std::convertible_to<std::size_t>;
-        { sdt.minumum_slot_size() } -> std::convertible_to<std::size_t>;
-        { sdt.maximum_slot_size() } -> std::convertible_to<std::size_t>;
-
-        { sdt.reserve_get(pos, len) } -> std::convertible_to<byte_span>;
-        { sdt.update_get(pos, len) } -> std::convertible_to<byte_span>;
-
-        { sdt.insert(pos, bv) } -> std::convertible_to<bool>;
-        { sdt.update(pos, bv) } -> std::convertible_to<bool>;
-        { sdt.erase(pos) } -> std::convertible_to<bool>;
-
-        { sdt.can_insert(std::size_t{}) } -> std::convertible_to<bool>;
-        { sdt.can_update(pos, std::size_t{}) } -> std::convertible_to<bool>;
-
-        { sdt.available() } -> std::convertible_to<std::size_t>;
-        { sdt.available_after_compact() } -> std::convertible_to<std::size_t>;
-
-        { sdt.compact(std::span<typename SdT::slot_type*>{}) } -> std::convertible_to<bool>;
-
-        { sdt.view() } -> std::convertible_to<std::span<const typename SdT::slot_type>>;
-        { sdt.get_slot(std::size_t{}) } -> std::convertible_to<byte_span>;
-    };
 
 	enum class directory_type {
 		variadic,
@@ -73,6 +45,7 @@ namespace fulla::page::slots {
 
         struct free_slot_type {
             word_u16 next;
+            word_u16 slot;
         } FULLA_PACKED;
     }
 
@@ -151,6 +124,16 @@ namespace fulla::page::slots {
             }
             else {
                 return header().slots;
+            }
+        }
+
+        std::size_t available_slots(std::size_t slot_size, bool check_compact = false) const noexcept {
+            const auto fixed_size = fixed_len(slot_size) + sizeof(slot_type);
+            if (check_compact) {
+                return available_after_compact() / fixed_size;
+            }
+            else {
+                return available() / fixed_size;
             }
         }
 
@@ -408,6 +391,9 @@ namespace fulla::page::slots {
                 shrink_at(pos);
                 if constexpr (!is_fixed) {
                     header().slots = static_cast<word16_type>(header().slots) - 1;
+                }
+                else {
+                    fs->slot = static_cast<word16_type>(pos);
                 }
                 push_free_slot(fs, mem.size());
                 check_valid();
@@ -811,9 +797,9 @@ namespace fulla::page::slots {
     template <std::size_t AlignV = 4>
     using variadic_directory_view = directory_view<directory_type::variadic, AlignV>;
 
-    static_assert(SlotDirectoryConcept<fixed_directory_view<>>);
-    static_assert(SlotDirectoryConcept<variadic_directory_view<>>);
-    static_assert(SlotDirectoryConcept<empty_directory_view>);
+    static_assert(concepts::DenseDirectory<fixed_directory_view<>>);
+    static_assert(concepts::DenseDirectory<variadic_directory_view<>>);
+    static_assert(concepts::DenseDirectory<empty_directory_view>);
 
     template <typename DirDst, typename DirSrc>
     inline std::size_t merge_need_bytes(const DirDst& dst, const DirSrc& src) {

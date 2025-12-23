@@ -8,9 +8,11 @@
 namespace fullafs::page {
     enum class kind : std::uint16_t {
         superblock = 1,
+
         directory_header = 0x10,
         directory_inode = 0x11,
         directory_leaf = 0x12,
+        directory_storage = 0x13,
 
         file_header = 0x20,
         file_chunk = 0x21,

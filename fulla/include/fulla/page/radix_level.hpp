@@ -36,12 +36,16 @@ namespace fulla::page {
         word_u16 level{ 0 };
         word_u16 factor{ 0x100 };
         word_u16 parent_id{ word_u16::max() };
-        word_u16 reserved{ 0 };
+        word_u16 bitmask_words{ 0 };
+        word_u32 reserved{ word_u32::max() };
+
         void init(word_u32::word_type p, word_u16::word_type l) {
             parent = p;
             level = l;
             parent_id = word_u16::max();
+            bitmask_words = 0;
         }
     } FULLA_PACKED;
+
     FULLA_PACKED_STRUCT_END
 };

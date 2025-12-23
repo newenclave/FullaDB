@@ -14,11 +14,13 @@
 
 #include "fulla/core/types.hpp"
 #include "fulla/core/debug.hpp"
+#include "fulla/core/bitset.hpp"
+
 #include "fulla/radix_table/concepts.hpp"
 #include "fulla/page/radix_level.hpp"
 #include "fulla/page/page_view.hpp"
 #include "fulla/page_allocator/concepts.hpp"
-#include "fulla/page/slot_directory.hpp"
+#include "fulla/page/slots/directory.hpp"
 
 namespace fulla::radix_table::paged {
 
@@ -64,6 +66,9 @@ namespace fulla::radix_table::paged {
 		using value_out_type = pid_type;
 		using index_type = std::uint16_t;
 
+		using bitset_type = core::bitset<std::uint32_t>;
+		using cbitset_type = core::bitset<std::uint32_t, core::byte_view>;
+
 		radix_level() = default;
 		radix_level(allocator_type& allocator, page_handle page)
 			: allocator_(&allocator)
@@ -72,13 +77,7 @@ namespace fulla::radix_table::paged {
 		}
 
 		std::size_t size() const {
-			// naiv impl. need to be fixed
-			auto values = get_values();
-			std::size_t res = 0;
-			for (auto& v : values) {
-				res += (v.type != static_cast<core::byte>(value_enum_type::none));
-			}
-			return res;
+			return get_bitset().popcount();
 		}
 
 		void set_parent(radix_level &rlt, index_type id) {
@@ -100,6 +99,7 @@ namespace fulla::radix_table::paged {
 			for (auto& v : values) {
 				v.init();
 			}
+			get_bitset().reset();
 			mark_dirty();
 		}
 
@@ -137,6 +137,8 @@ namespace fulla::radix_table::paged {
 			DB_ASSERT(get_level() > 0, "Bad level");
 			values[id].value = rl.pid();
 			values[id].type = static_cast<core::byte>(value_enum_type::level);
+			get_bitset().set(id);
+
 			mark_dirty();
 			rl.set_parent(*this, id);
 		}
@@ -147,12 +149,15 @@ namespace fulla::radix_table::paged {
 			DB_ASSERT(get_level() == 0, "Bad level");
 			values[id].value = val;
 			values[id].type = static_cast<core::byte>(value_enum_type::value);
+			get_bitset().set(id);
+
 			mark_dirty();
 		}
 
 		void remove(index_type id) {
 			auto values = get_values();
 			values[id].type = static_cast<core::byte>(value_enum_type::none);
+			get_bitset().clear(id);
 			mark_dirty();
 		}
 
@@ -187,21 +192,51 @@ namespace fulla::radix_table::paged {
 			return values[id].type == static_cast<core::byte>(value_enum_type::level);
 		}
 
+		bitset_type get_bitset() {
+			page_view_type pv{ page_.rw_span() };
+
+			const auto max_cap = pv.capacity();
+			const auto bitmask_size = sizeof(std::uint32_t) * pv.subheader<page::radix_level_header>()->bitmask_words.get();
+			const auto max_values = max_cap / sizeof(page::radix_value) - bitmask_size;
+
+			auto page_span = pv.rw_span().subspan(0, bitmask_size);
+			return { page_span, max_values };
+		}
+
+		cbitset_type get_bitset() const {
+			cpage_view_type pv{ page_.ro_span() };
+			
+			const auto max_cap = pv.capacity();
+			const auto bitmask_size = sizeof(std::uint32_t) * pv.subheader<page::radix_level_header>()->bitmask_words.get();
+			const auto max_values = max_cap / sizeof(page::radix_value) - bitmask_size;
+
+			auto page_span = pv.ro_span().subspan(0, bitmask_size);
+			return { page_span, max_values };
+		}
+
 		values_span get_values() {
 			page_view_type pv{ page_.rw_span() };
 			const auto max_cap = pv.capacity();
-			const auto max_values = max_cap / sizeof(page::radix_value);
+			const auto bitmask_size = sizeof(std::uint32_t) * pv.subheader<page::radix_level_header>()->bitmask_words.get();
+			const auto max_values = max_cap / sizeof(page::radix_value) - bitmask_size;
+
 			DB_ASSERT(max_cap >= 256, "Page is too short");
-			auto page_span = pv.rw_span();
+
+			auto page_span = pv.rw_span().subspan(bitmask_size);
+			
 			return { reinterpret_cast<page::radix_value*>(page_span.data()), max_values };
 		}
 
 		cvalues_span get_values() const {
 			cpage_view_type pv{ page_.ro_span() };
 			const auto max_cap = pv.capacity();
-			const auto max_values = max_cap / sizeof(page::radix_value);
+			const auto bitmask_size = sizeof(std::uint32_t) * pv.subheader<page::radix_level_header>()->bitmask_words.get();
+			const auto max_values = max_cap / sizeof(page::radix_value) - bitmask_size;
+
 			DB_ASSERT(max_cap >= 256, "Page is too short");
-			auto page_span = pv.ro_span();
+
+			auto page_span = pv.rw_span().subspan(bitmask_size);
+
 			return { reinterpret_cast<const page::radix_value*>(page_span.data()), max_values };
 		}
 
@@ -220,9 +255,11 @@ namespace fulla::radix_table::paged {
 	class allocator {
 	public:
 		using allocator_type = PaT;
+		using page_handle = typename allocator_type::page_handle;
 		using pid_type = typename PaT::pid_type;
 		using output_type = radix_level<allocator_type>;
 		using index_type = std::uint16_t;
+		using bitset_type = core::bitset<std::uint32_t>;
 
 		using page_metadata_type = typename RlDT::page_metadata_type;
 		constexpr static const auto page_kind_value = RlDT::page_kind_value;
@@ -243,10 +280,15 @@ namespace fulla::radix_table::paged {
 				auto sh = pv.subheader<page::radix_level_header>();
 
 				sh->init(allocator_type::invalid_pid, lvl);
+				const auto bitmask_words = get_bitmask_words(new_page);
+				sh->bitmask_words = static_cast<decltype(sh->bitmask_words)::word_type>(bitmask_words);
+				auto bs = get_bitset(new_page);
+				bs.reset();
+
 				if constexpr (core::concepts::HasInit<page::radix_level_header>) {
 					pv.metadata_as<page::radix_level_header>()->init();
 				}
-				
+
 				output_type res(*allocator_, new_page);
 				res.reset_values();
 				return res;
@@ -259,6 +301,20 @@ namespace fulla::radix_table::paged {
 		}
 
 	private:
+
+		bitset_type get_bitset(page_handle& ph) {
+			page_view_type pv{ ph.rw_span() };
+			const auto bitmask_size = sizeof(std::uint32_t) * pv.subheader<page::radix_level_header>()->bitmask_words.get();
+			auto page_span = pv.rw_span().subspan(0, bitmask_size);
+			return bitset_type(page_span, 256);
+		}
+
+		auto get_bitmask_words(const page_handle &ph) const {
+			cpage_view_type pv{ ph.ro_span() };
+			const auto max_cap = pv.capacity();
+			[[maybe_unused]] auto [bitmask_words, total_elements] = core::max_objects_by_words<std::uint32_t>(max_cap, sizeof(page::radix_value));
+			return bitmask_words;
+		}
 
 		allocator_type* allocator_ = nullptr;
 	};

@@ -19,7 +19,7 @@
 #include "fulla/core/types.hpp"
 #include "fulla/page/header.hpp"
 #include "fulla/page/metadata.hpp"
-#include "fulla/page/slot_directory.hpp"
+#include "fulla/page/slots/concepts.hpp"
 
 namespace fulla::page {
 
@@ -29,7 +29,11 @@ namespace fulla::page {
     using core::byte_view;
     using core::byte_buffer;
 
-    template<slots::SlotDirectoryConcept SdT, typename SpanT>
+    template <typename ST>
+    concept SlotDirectory =
+        slots::concepts::DenseDirectory<ST> || slots::concepts::StableDirectory<ST>;
+
+    template<SlotDirectory SdT, typename SpanT>
         requires(std::same_as<SpanT, byte_span> || std::same_as<SpanT, byte_view>)
     struct page_view_common {
 
@@ -148,10 +152,10 @@ namespace fulla::page {
         SpanT page_{};
     };
 
-    template <slots::SlotDirectoryConcept SdT>
+    template <SlotDirectory SdT>
     using page_view = page_view_common<SdT, byte_span>;
 
-    template <slots::SlotDirectoryConcept SdT>
+    template <SlotDirectory SdT>
     using const_page_view = page_view_common<SdT, byte_view>;
 
 } // namespace fulla::page

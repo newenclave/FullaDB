@@ -28,7 +28,7 @@
 
 #include "fulla/page/freed.hpp"
 
-#include "fulla/page/slot_directory.hpp"
+#include "fulla/page/slots/directory.hpp"
 #include "fulla/page/ranges.hpp"
 
 #include "fulla/page_allocator/concepts.hpp"

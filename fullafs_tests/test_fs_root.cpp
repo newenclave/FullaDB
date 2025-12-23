@@ -50,7 +50,7 @@ TEST_SUITE("fs/root") {
 
 			for (const auto &d : root_dir) {
 				const bool isdir = d.is_directory();
-				std::cout << (isdir ? "* " : "  ") << d.name() << "\n";
+				std::cout << (isdir ? "[" : " ") << d.name() << (isdir ? "]" : " ") << "\n";
 			}
 
 			auto itr = root_dir.find("test_0");

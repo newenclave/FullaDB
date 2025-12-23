@@ -3,7 +3,7 @@
 #include "fulla/core/types.hpp"
 #include "fulla/page/header.hpp"
 #include "fulla/page/page_view.hpp"
-#include "fulla/page/slot_directory.hpp"
+#include "fulla/page/slots/directory.hpp"
 #include "fulla/page_allocator/concepts.hpp"
 
 namespace fullafs::storage {

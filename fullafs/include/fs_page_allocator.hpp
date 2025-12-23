@@ -22,11 +22,13 @@ namespace fullafs::storage {
         typename PidT = std::uint32_t>
     class fs_page_allocator: public fulla::page_allocator::base<DevT, PidT> {
     public:
+        
         using device_type = DevT;
         using parent_type = fulla::page_allocator::base<device_type, PidT>;
         using pid_type = typename parent_type::pid_type;
         using page_handle = typename parent_type::page_handle;
         using empty_slot_directory = fulla::page::slots::empty_directory_view;
+
         using cpage_view_type = fulla::page::const_page_view<empty_slot_directory>;
         using page_view_type = fulla::page::page_view<empty_slot_directory>;
 

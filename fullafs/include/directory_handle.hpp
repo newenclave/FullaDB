@@ -32,6 +32,7 @@ namespace fullafs {
 		using page_handle = typename allocator_type::page_handle;
 		using cpage_view_type = typename allocator_type::cpage_view_type;
 		using page_view_type = typename allocator_type::page_view_type;
+		using slot_type = std::uint16_t;
 
 		struct root_accessor {
 
@@ -42,8 +43,7 @@ namespace fullafs {
 
 			root_accessor(directory_handle* dir)
 				: dir_(dir)
-			{
-			}
+			{}
 
 			bool has_root() const {
 				access_handle hdr(dir_->open());
@@ -80,8 +80,7 @@ namespace fullafs {
 		struct access_handle : public storage::handle_base<allocator_type, page::directory_header> {
 			access_handle(page_handle ph)
 				: storage::handle_base<allocator_type, page::directory_header>(std::move(ph))
-			{
-			}
+			{}
 
 			void set_parent(pid_type p) noexcept {
 				this->get()->parent = p;
@@ -167,14 +166,22 @@ namespace fullafs {
 				if (auto* desc = descriptor()) {
 					return desc->page;
 				}
-				return pid_type{};
+				return allocator_type::invalid_pid;
+			}
+
+			slot_type slot_id() const noexcept {
+				if (auto* desc = descriptor()) {
+					return desc->slot;
+				}
+				return word_u16::max();
 			}
 
 			directory_handle handle() const {
 				if ((entry_type_ == core::name_type::directory) && allocator_) {
 					auto pid = page_id();
-					if (pid != pid_type{}) {
-						return directory_handle(pid, *allocator_);
+					auto sid = slot_id();
+					if (pid != allocator_type::invalid_pid) {
+						return directory_handle(pid, sid, *allocator_);
 					}
 				}
 				return {};
@@ -284,6 +291,7 @@ namespace fullafs {
 		directory_handle() = default;
 		directory_handle(const directory_handle& other)
 			: header_pid_(other.header_pid_)
+			, header_slot_(other.header_slot_)
 			, allocator_(other.allocator_)
 			, bpt_(tree_type(*allocator_, fulla::bpt::paged::settings{}, root_accessor(this)))
 		{
@@ -292,6 +300,7 @@ namespace fullafs {
 
 		directory_handle& operator = (const directory_handle& other) {
 			header_pid_ = other.header_pid_;
+			header_slot_ = other.header_slot_;
 			allocator_ =  other.allocator_;
 			bpt_ = tree_type(*allocator_, fulla::bpt::paged::settings{}, root_accessor(this));
 			bpt_->set_rebalance_policy(fulla::bpt::policies::rebalance::neighbor_share);
@@ -300,6 +309,7 @@ namespace fullafs {
 
 		directory_handle(directory_handle&& other)
 			: header_pid_(std::move(other.header_pid_))
+			, header_slot_(std::move(other.header_slot_))
 			, allocator_(other.allocator_)
 			, bpt_(tree_type(*allocator_, fulla::bpt::paged::settings{}, root_accessor(this)))
 		{
@@ -308,15 +318,17 @@ namespace fullafs {
 
 		directory_handle& operator = (directory_handle&& other) {
 			header_pid_ = std::move(other.header_pid_);
+			header_slot_ = std::move(other.header_slot_);
 			allocator_ = std::move(other.allocator_);
 			bpt_ = tree_type(*allocator_, fulla::bpt::paged::settings{}, root_accessor(this));
 			bpt_->set_rebalance_policy(fulla::bpt::policies::rebalance::neighbor_share);
 			return *this;
 		}
 
-		directory_handle(pid_type page, allocator_type& alloc)
+		directory_handle(pid_type page, std::uint16_t slot, allocator_type& alloc)
 			: header_pid_(page)
-			, allocator_(&alloc) 
+			, header_slot_(slot)
+			, allocator_(&alloc)
 			, bpt_(tree_type(*allocator_, fulla::bpt::paged::settings{}, root_accessor(this)))
 		{
 			bpt_->set_rebalance_policy(fulla::bpt::policies::rebalance::neighbor_share);
@@ -422,7 +434,7 @@ namespace fullafs {
 			if (new_directory.is_valid()) {
 				typename directory_handle::access_handle hdl{ new_directory };
 				hdl.get()->init(parent);
-				return directory_handle(hdl.handle().pid(), *allocator);
+				return directory_handle(hdl.handle().pid(), word_u16::max(), *allocator);
 			}
 			return {};
 		}
@@ -461,6 +473,7 @@ namespace fullafs {
 		}
 
 		pid_type header_pid_ = allocator_type::invalid_pid;
+		std::uint16_t header_slot_ = word_u16::max();
 		allocator_type *allocator_ = nullptr;
 		std::optional<tree_type> bpt_;
 	};

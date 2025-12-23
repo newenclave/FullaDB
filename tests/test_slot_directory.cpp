@@ -1,5 +1,6 @@
 #include "tests.hpp"
-#include "fulla/page/slot_directory.hpp"
+#include "fulla/page/slots/directory.hpp"
+#include "fulla/page/slots/stable_directory.hpp"
 
 namespace {
     using byte = fulla::core::byte;
@@ -67,7 +68,21 @@ static void check_concat_payloads(const DirDst& dst, std::size_t dst_before_coun
     }
 }
 
+namespace {
+    auto as_span(void* ptr, std::size_t l) -> byte_span {
+        return { reinterpret_cast<std::byte*>(ptr), l };
+    };
+
+    template <typename PtrT>
+    auto as_ptr(fulla::core::byte_span data) {
+        return reinterpret_cast<PtrT *>(data.data());
+    };
+
+}
+
 TEST_SUITE("page/slot_direcory") {
+
+    using fulla::core::byte_span;
 
     TEST_CASE("init + empty validate") {
         std::vector<byte> page(512, static_cast<byte>(0));
@@ -565,6 +580,49 @@ TEST_SUITE("page/slot_direcory") {
         [[maybe_unused]] auto all_dst = dst.view();
         CHECK(dst.validate());
         check_in_bounds(dst, dst_buf);
+    }
+
+    TEST_CASE("stable slot directory") {
+
+        std::vector<byte> buf = make_page(256);
+        struct test {
+            int i = 0;
+            double d = 0.0;
+            auto operator <=> (const test &) const noexcept = default;
+        };
+
+        auto as_span = [](void* ptr, std::size_t l) -> byte_span {
+            return { reinterpret_cast<std::byte*>(ptr), l };
+            };
+
+        stable_directory_view<byte_span> dst(byte_span(buf.data(), buf.size()));
+        dst.init(sizeof(test));
+
+        CHECK(dst.size() == 0);
+        CHECK(dst.capacity() != 0);
+
+        for (int i = 0; i < dst.capacity(); ++i) {
+            if (i == dst.capacity() - 1) {
+                std::cout << "";
+            }
+            test t0 = { .i = i, .d = 0.45 };
+            CHECK(dst.set(i, as_span(&t0, sizeof(t0))));
+        }
+
+        CHECK(dst.size() == dst.capacity());
+
+        for (int i = 0; i < dst.capacity(); ++i) {
+            test t0 = { .i = i, .d = 0.45 };
+            auto t = dst.get(i);
+            CHECK(t.size() == sizeof(test));
+            CHECK(*as_ptr<test>(t) == t0);
+        }
+        for (int i = 0; i < dst.capacity(); ++i) {
+            CHECK(dst.erase(i));
+        }
+
+        CHECK(dst.size() == 0);
+
     }
 
 }

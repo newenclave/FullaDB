@@ -63,6 +63,7 @@ include(FetchContent)
         fullafs_tests/main.cpp
         fullafs_tests/test_fs_page_allocator.cpp
         fullafs_tests/test_fs_root.cpp
+        fullafs_tests/test_directory_storage_handle.cpp
     )
     target_link_libraries(fullafs_tests PRIVATE fulladb)    
     target_include_directories(fullafs_tests PRIVATE ${FULLA_HEADERS})
