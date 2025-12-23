@@ -135,6 +135,8 @@ TEST_SUITE("slab storage") {
 			expected_data.erase(it);
 		}
 
+		CHECK(allocator.allocated == allocator.destoyed);
+
 		std::cout << std::format("Slab storage test: Allocated: {}, destroyed: {}\n", allocator.allocated, allocator.destoyed);
     }
 }

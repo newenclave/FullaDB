@@ -202,7 +202,7 @@ TEST_SUITE("radix_table/trie/memory") {
 			CHECK(!trie.has(i));
 		}
 
-		std::cout << std::format("0..ffff. Allocated: {}; Destroyed: {}\n", pal.allocated, pal.destoyed);
+		std::cout << std::format("Radix: 0..ffff. Allocated: {}; Destroyed: {}\n", pal.allocated, pal.destoyed);
 	}
 
 	TEST_CASE("paged/model/random") {
@@ -230,7 +230,7 @@ TEST_SUITE("radix_table/trie/memory") {
 			trie.remove(v.first);
 		}
 
-		std::cout << std::format("random. values: {}; Allocated: {}; Destroyed: {}\n", tests.size(), pal.allocated, pal.destoyed);
+		std::cout << std::format("Radix: random. values: {}; Allocated: {}; Destroyed: {}\n", tests.size(), pal.allocated, pal.destoyed);
 	}
 
 }
