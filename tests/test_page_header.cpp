@@ -10,10 +10,10 @@ TEST_SUITE("page/header") {
 
         alignas(64) std::array<fulla::core::byte, PS> buf{};
         auto* hdr = reinterpret_cast<page_header*>(buf.data());
-        hdr->init(static_cast<std::uint16_t>(page_kind::bpt_leaf), PS, /*self*/123, /*subhdr_size*/12);
+        hdr->init(static_cast<std::uint16_t>(2), PS, /*self*/123, /*subhdr_size*/12);
 
         CHECK(sizeof(page_header) == page_header::header_size());
-        CHECK(hdr->kind.get() == static_cast<std::uint16_t>(page_kind::bpt_leaf));
+        CHECK(hdr->kind.get() == static_cast<std::uint16_t>(2));
         CHECK(static_cast<std::uint16_t>(hdr->metadata_size) == 0);
 
         const auto base = static_cast<std::uint16_t>(sizeof(page_header) + 12);

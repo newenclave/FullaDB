@@ -1,5 +1,5 @@
 /*
- * File: slot_directory.hpp
+ * File: slots/directory.hpp
  * Author: newenclave
  * GitHub: https://github.com/newenclave
  * Created: 2025-11-08

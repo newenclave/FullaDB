@@ -44,7 +44,7 @@ TEST_SUITE("storage/buffer_manager") {
             {
                 auto pg = ph.rw_span();
                 auto* hdr = reinterpret_cast<page_header*>(pg.data());
-                hdr->init(static_cast<std::uint16_t>(page_kind::heap), 1024, /*self*/0);
+                hdr->init(5, 1024, /*self*/0);
             }
             ph.reset(); // unpin
 
@@ -57,7 +57,7 @@ TEST_SUITE("storage/buffer_manager") {
             {
                 auto pg = fh.ro_span();
                 auto* hdr = reinterpret_cast<const page_header*>(pg.data());
-                CHECK(static_cast<page_kind>(static_cast<std::uint16_t>(hdr->kind)) == page_kind::heap);
+                CHECK(hdr->kind.get() == 5);
             }
         }
 

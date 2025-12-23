@@ -20,18 +20,6 @@ namespace fulla::page {
     using core::word_u32;
     using core::byte;
 
-    // Logical kind of a page in the file.
-    enum class page_kind : word_u16::word_type {
-        undefined   = 0,
-        sys_page    = 1,
-        heap        = 2,
-        bpt_root    = 3,
-        bpt_leaf    = 4,
-        bpt_inode   = 5,
-        long_store_head  = 6,
-        long_store_chunk = 7,
-    };
-
     // Common page header that prefixes every page in the file.
     // The header is packed to guarantee on-disk layout stability.
     FULLA_PACKED_STRUCT_BEGIN
