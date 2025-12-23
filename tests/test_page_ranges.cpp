@@ -3,15 +3,16 @@
 #include "fulla/page/header.hpp"
 #include "fulla/page/page_view.hpp"
 #include "fulla/page/ranges.hpp"
-#include "fulla/page/slots/directory.hpp"
+#include "fulla/slots/directory.hpp"
 #include "fulla/codec/prop.hpp"
 #include "fulla/codec/data_view.hpp"
-
+#include "fulla/slots/directory.hpp"
 
 using namespace fulla::core;
 using namespace fulla::page;
 using namespace fulla::codec;
 using namespace fulla::codec::prop;
+using namespace fulla::slots;
 
 namespace {
     static std::vector<byte> make_blank_page(std::size_t ps, std::size_t subhdr_size = 4) {
@@ -49,7 +50,7 @@ namespace {
 TEST_SUITE("page/ranges") {
 
     TEST_CASE("check view data") {
-        using slot_dir_type = slots::variadic_directory_view<>;
+        using slot_dir_type = variadic_directory_view<>;
         auto buf = make_blank_page(500, 12);
         page_view<slot_dir_type> pv{ buf };
 
@@ -65,7 +66,7 @@ TEST_SUITE("page/ranges") {
     }
 
     TEST_CASE("lower_bound over slots with projection & record_less") {
-        using slot_dir_type = slots::variadic_directory_view<>;
+        using slot_dir_type = variadic_directory_view<>;
         auto buf = make_blank_page(4096);
         page_view<slot_dir_type> pv{buf};
         pv.get_slots_dir().init();
@@ -105,7 +106,7 @@ TEST_SUITE("page/ranges") {
     }
 
     TEST_CASE("lower_bound over slots with projection & record_less & custom key format") {
-        using slot_dir_type = slots::variadic_directory_view<>;
+        using slot_dir_type = variadic_directory_view<>;
         const container_extrctor CE{};
         auto buf = make_blank_page(4096);
         page_view<slot_dir_type> pv{buf};

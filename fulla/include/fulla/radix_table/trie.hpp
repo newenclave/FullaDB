@@ -12,7 +12,7 @@
 #include <cstdint>
 
 #include "fulla/core/concepts.hpp"
-#include "fulla/page/slots/directory.hpp"
+#include "fulla/slots/directory.hpp"
 #include "fulla/page/radix_level.hpp"
 #include "fulla/page_allocator/concepts.hpp"
 #include "fulla/radix_table/concepts.hpp"

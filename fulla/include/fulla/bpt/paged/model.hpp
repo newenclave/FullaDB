@@ -28,7 +28,7 @@
 
 #include "fulla/page/freed.hpp"
 
-#include "fulla/page/slots/directory.hpp"
+#include "fulla/slots/directory.hpp"
 #include "fulla/page/ranges.hpp"
 
 #include "fulla/page_allocator/concepts.hpp"
@@ -63,7 +63,7 @@ namespace fulla::bpt::paged {
             byte_buffer val;
         };
 
-        using slot_directory_type = page::slots::variadic_directory_view<>;
+        using slot_directory_type = slots::variadic_directory_view<>;
         using page_view_type = page::page_view<slot_directory_type>;
         using cpage_view_type = page::const_page_view<slot_directory_type>;
     }
@@ -763,7 +763,7 @@ namespace fulla::bpt::paged {
             }
 
             bool can_merge_leafs(const leaf_type& dst, const leaf_type& src) const {
-                return page::slots::can_merge(dst.get_page().get_slots_dir(), src.get_page().get_slots_dir());
+                return slots::can_merge(dst.get_page().get_slots_dir(), src.get_page().get_slots_dir());
             }
             
             bool can_merge_inodes(const inode_type& dst, const inode_type& src) {
@@ -771,12 +771,12 @@ namespace fulla::bpt::paged {
                 const auto src_slots = src.get_page().get_slots_dir();
                 const auto dst_available = dst_slots.available_after_compact();
  
-                const auto need_size = page::slots::merge_need_bytes(dst_slots, src_slots) + maximum_inode_slot_size;
+                const auto need_size = slots::merge_need_bytes(dst_slots, src_slots) + maximum_inode_slot_size;
 
                 if (dst_available < need_size) {
                     return false;
                 }
-                return page::slots::can_merge(dst.get_page().get_slots_dir(), src.get_page().get_slots_dir());
+                return slots::can_merge(dst.get_page().get_slots_dir(), src.get_page().get_slots_dir());
             }
 
             std::tuple<node_id_type, bool> load_root() {

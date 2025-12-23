@@ -55,7 +55,7 @@ namespace {
 	}
 
 	template <storage::RandomAccessBlockDevice RadT, typename PidT = std::uint32_t>
-	struct test_page_allocator : public page_allocator::base<RadT, PidT> {
+	struct test_page_allocator final: public page_allocator::base<RadT, PidT> {
 		using base_type = page_allocator::base<RadT, PidT>;
 		using pid_type = PidT;
 		using underlying_device_type = RadT;
@@ -198,11 +198,39 @@ TEST_SUITE("radix_table/trie/memory") {
 			trie.remove(i);
 		}
 
-		for (int i = 0; i < MAXIMUM_VALUES; ++i) {
+		for (int i = 0; i < MAXIMUM_VALUES + 10; ++i) {
 			CHECK(!trie.has(i));
 		}
 
-		std::cout << std::format("Allocated: {}; Destroyed: {}\n", pal.allocated, pal.destoyed);
+		std::cout << std::format("0..ffff. Allocated: {}; Destroyed: {}\n", pal.allocated, pal.destoyed);
+	}
+
+	TEST_CASE("paged/model/random") {
+		device_type dev(4 * 1024);
+		test_page_allocator pal(dev, 10);
+		using model_type = radix_table::paged::model<page_allocator_type>;
+		using page_trie_type = radix_table::trie<std::uint32_t, model_type>;
+		using page_test_map_type = std::map<std::uint32_t, std::uint32_t>;
+
+		page_trie_type trie(pal);
+		page_test_map_type tests;
+
+		for (int i = 0; i < MAXIMUM_VALUES; ++i) {
+			auto k = get_random_uint(0, 0xFFFFFFFF);
+			auto value = get_random_uint(5, 20);
+			if (!tests.contains(k)) {
+				tests.emplace(k, value);
+				trie.set(k, value);
+			}
+		}
+
+		for (auto& v : tests) {
+			auto val = trie.get(v.first);
+			CHECK(v.second == val);
+			trie.remove(v.first);
+		}
+
+		std::cout << std::format("random. values: {}; Allocated: {}; Destroyed: {}\n", tests.size(), pal.allocated, pal.destoyed);
 	}
 
 }

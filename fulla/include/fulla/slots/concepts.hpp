@@ -12,7 +12,7 @@
 #include "fulla/core/types.hpp"
 #include "fulla/core/pack.hpp"
 
-namespace fulla::page::slots::concepts { 
+namespace fulla::slots::concepts { 
 
     using core::word_u16;
     using core::byte;

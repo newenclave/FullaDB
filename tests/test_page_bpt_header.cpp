@@ -7,7 +7,7 @@
 #include "fulla/page/bpt_leaf.hpp"
 #include "fulla/page/header.hpp"
 #include "fulla/page/page_view.hpp"
-#include "fulla/page/slots/directory.hpp"
+#include "fulla/slots/directory.hpp"
 #include "fulla/page/ranges.hpp"
 
 namespace {
@@ -15,7 +15,7 @@ namespace {
     using namespace fulla;
     using namespace fulla::codec::prop;
 
-    using slot_dir_type = page::slots::variadic_directory_view<>;
+    using slot_dir_type = slots::variadic_directory_view<>;
     using page_view_type = page::page_view<slot_dir_type>;
     core::byte_buffer make_inode_page(std::size_t size) {
         core::byte_buffer result(size);

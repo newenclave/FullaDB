@@ -11,9 +11,10 @@
 #include <cassert>
 #include "fulla/core/types.hpp"
 #include "fulla/core/pack.hpp"
-#include "fulla/page/slots/concepts.hpp"
+#include "fulla/slots/concepts.hpp"
+#include "fulla/page/slots.hpp"
 
-namespace fulla::page::slots { 
+namespace fulla::slots { 
 
     using core::word_u16;
     using core::byte;
@@ -29,42 +30,6 @@ namespace fulla::page::slots {
 		fixed,
 	};
 
-    FULLA_PACKED_STRUCT_BEGIN
-    struct slot_entry {
-        word_u16 off;
-        word_u16 len;
-    };
-
-    namespace fixed {
-        struct header {
-            word_u16 size{ 0 };         // one slot size
-            word_u16 free_beg{ 0 };     // offset to the first free byte in payload area (grows upward)
-            word_u16 free_end{ 0 };     // offset to the last free byte+1 from the end (grows downward)
-            word_u16 freed;             // first freed slot.
-        } FULLA_PACKED;
-
-        struct free_slot_type {
-            word_u16 next;
-            word_u16 slot;
-        } FULLA_PACKED;
-    }
-
-    namespace variadic {
-        struct header {
-            word_u16 slots{ 0 };        // number of occupied slot entries
-            word_u16 free_beg{ 0 };     // offset to the first free byte in payload area (grows upward)
-            word_u16 free_end{ 0 };     // offset to the last free byte+1 from the end (grows downward)
-            word_u16 freed;             // first freed slot.
-        } FULLA_PACKED;
-
-        struct free_slot_type {
-            word_u16 prev;
-            word_u16 next;
-            word_u16 len;
-        } FULLA_PACKED;
-    }
-    FULLA_PACKED_STRUCT_END
-
     template <directory_type Type, std::size_t AlignV = 4>
     struct directory_view {
 
@@ -75,16 +40,16 @@ namespace fulla::page::slots {
         constexpr static const std::size_t align_val = AlignV;
         constexpr static const bool is_fixed = (Type == directory_type::fixed);
 
-        using slot_type = slot_entry;
+        using slot_type = page::slot_entry;
 
         using free_slot_type = std::conditional_t <is_fixed,
-            fixed::free_slot_type,
-            variadic::free_slot_type
+            page::slot_fixed::free_slot_type,
+            page::slot_variadic::free_slot_type
         >;
 
         using directory_header = std::conditional_t<is_fixed,
-            fixed::header,
-            variadic::header
+            page::slot_fixed::header,
+            page::slot_variadic::header
         >;
 
         static_assert(sizeof(slot_type) == 4, "Bad alignment");
@@ -797,9 +762,9 @@ namespace fulla::page::slots {
     template <std::size_t AlignV = 4>
     using variadic_directory_view = directory_view<directory_type::variadic, AlignV>;
 
-    static_assert(concepts::DenseDirectory<fixed_directory_view<>>);
-    static_assert(concepts::DenseDirectory<variadic_directory_view<>>);
-    static_assert(concepts::DenseDirectory<empty_directory_view>);
+    static_assert(fulla::slots::concepts::DenseDirectory<fixed_directory_view<>>);
+    static_assert(fulla::slots::concepts::DenseDirectory<variadic_directory_view<>>);
+    static_assert(fulla::slots::concepts::DenseDirectory<empty_directory_view>);
 
     template <typename DirDst, typename DirSrc>
     inline std::size_t merge_need_bytes(const DirDst& dst, const DirSrc& src) {

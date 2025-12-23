@@ -20,13 +20,12 @@
 #include "fulla/page/radix_level.hpp"
 #include "fulla/page/page_view.hpp"
 #include "fulla/page_allocator/concepts.hpp"
-#include "fulla/page/slots/directory.hpp"
+#include "fulla/slots/directory.hpp"
 
 namespace fulla::radix_table::paged {
 
-	using page_view_type = page::page_view<page::slots::empty_directory_view>;
-	using cpage_view_type = page::const_page_view<page::slots::empty_directory_view>;
-
+	using page_view_type = page::page_view<slots::empty_directory_view>;
+	using cpage_view_type = page::const_page_view<slots::empty_directory_view>;
 
 	template <typename T>
 	concept RadixLevelKinds = requires (T s) {

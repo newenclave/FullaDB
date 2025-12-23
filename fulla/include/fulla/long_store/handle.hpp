@@ -57,7 +57,7 @@ namespace fulla::long_store {
 		using header_type = page::long_store_header;
 		using chunk_type = page::long_store_chunk;
 		
-		using slot_directory_type = page::slots::empty_directory_view;
+		using slot_directory_type = slots::empty_directory_view;
 		using page_view_type = page::page_view<slot_directory_type>;
 		using cpage_view_type = page::const_page_view<slot_directory_type>;
 

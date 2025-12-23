@@ -13,9 +13,9 @@
 #include "fulla/core/pack.hpp"
 #include "fulla/core/bitset.hpp"
 
-#include "fulla/page/slots/concepts.hpp"
+#include "fulla/slots/concepts.hpp"
 
-namespace fulla::page::slots { 
+namespace fulla::slots { 
 
     using core::word_u16;
     using core::byte;

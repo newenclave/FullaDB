@@ -1,10 +1,10 @@
 #include "tests.hpp"
-#include "fulla/page/slots/directory.hpp"
-#include "fulla/page/slots/stable_directory.hpp"
+#include "fulla/slots/directory.hpp"
+#include "fulla/slots/stable_directory.hpp"
 
 namespace {
     using byte = fulla::core::byte;
-    using namespace fulla::page::slots;
+    using namespace fulla::slots;
 }
 
 static std::vector<byte> make_page(std::size_t sz) {

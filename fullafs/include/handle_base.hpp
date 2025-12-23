@@ -3,8 +3,8 @@
 #include "fulla/core/types.hpp"
 #include "fulla/page/header.hpp"
 #include "fulla/page/page_view.hpp"
-#include "fulla/page/slots/directory.hpp"
 #include "fulla/page_allocator/concepts.hpp"
+#include "fulla/slots/directory.hpp"
 
 namespace fullafs::storage {
 
@@ -15,7 +15,7 @@ namespace fullafs::storage {
         using pid_type = typename AllT::pid_type;
         using page_handle = AllT::page_handle;
 
-        using empty_slot_directory = fulla::page::slots::empty_directory_view;
+        using empty_slot_directory = fulla::slots::empty_directory_view;
         using cpage_view_type = fulla::page::const_page_view<empty_slot_directory>;
         using page_view_type = fulla::page::page_view<empty_slot_directory>;
 

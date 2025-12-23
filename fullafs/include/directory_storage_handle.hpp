@@ -1,7 +1,7 @@
 #pragma once
 
 #include "fulla/bpt/tree.hpp"
-#include "fulla/page/slots/stable_directory.hpp"
+#include "fulla/slots/stable_directory.hpp"
 #include "fulla/page/page_view.hpp"
 
 #include "page_headers.hpp"
@@ -20,8 +20,8 @@ namespace fullafs {
 	class directory_storage_handle {
 	public:
 
-		using slot_type = fulla::page::slots::stable_directory_view<byte_span>;
-		using cslot_type = fulla::page::slots::stable_directory_view<byte_view>;
+		using slot_type = fulla::slots::stable_directory_view<byte_span>;
+		using cslot_type = fulla::slots::stable_directory_view<byte_view>;
 
 		using page_view_type = fulla::page::page_view<slot_type>;
 		using cpage_view_type = fulla::page::const_page_view<cslot_type>;
