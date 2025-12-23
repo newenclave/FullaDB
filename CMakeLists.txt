@@ -96,6 +96,7 @@ if (FULLADB_BUILD_TESTS)
         tests/test_bpt_create_dictionary.cpp
         tests/test_long_storage.cpp
         tests/test_radix_trie.cpp
+        tests/test_slab_store.cpp
     )
     
     target_link_libraries(tests PRIVATE fulladb)    
