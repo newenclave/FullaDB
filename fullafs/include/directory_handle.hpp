@@ -8,6 +8,7 @@
 #include "handle_base.hpp"
 #include "key_values.hpp"
 #include "file_handle.hpp"
+#include "directory_storage_handle.hpp"
 
 namespace fullafs {
 	
@@ -27,6 +28,7 @@ namespace fullafs {
 
 		using less_type = core::path_string_less;
 		using allocator_type = storage::fs_page_allocator<DevT, PidT>;
+		using directory_storage_type = directory_storage_handle<DevT, PidT>;
 		using device_type = DevT;
 		using pid_type = typename allocator_type::pid_type;
 		using page_handle = typename allocator_type::page_handle;
@@ -77,40 +79,52 @@ namespace fullafs {
 			directory_handle* dir_ = nullptr;
 		};
 
-		struct access_handle : public storage::handle_base<allocator_type, page::directory_header> {
-			access_handle(page_handle ph)
-				: storage::handle_base<allocator_type, page::directory_header>(std::move(ph))
+		struct access_handle : public storage::handle_base<allocator_type, page::directory_storage> {
+			access_handle(page_handle ph, core::byte_span data)
+				: storage::handle_base<allocator_type, page::directory_storage>(std::move(ph))
+				, slot_(data)
 			{}
+			access_handle() = default;
 
 			void set_parent(pid_type p) noexcept {
-				this->get()->parent = p;
+				get_slot()->parent = p;
 			}
 
 			pid_type parent() const noexcept {
-				return this->get()->parent;
+				return get_slot()->parent;
 			}
 
 			void set_entry_root(pid_type val) noexcept {
-				this->get()->entry_root = val;
+				get_slot()->entry_root = val;
 			}
 
 			pid_type entry_root() const noexcept {
-				return this->get()->entry_root;
+				return get_slot()->entry_root;
 			}
 
 			std::size_t total_count() const noexcept {
-				return this->get()->total_entries;
+				return get_slot()->total_entries;
 			}
 
 			std::size_t inc_total_count() noexcept {
-				this->get()->total_entries = (this->get()->total_entries.get() + 1);
-				return this->get()->total_entries;
+				get_slot()->total_entries = (get_slot()->total_entries.get() + 1);
+				return get_slot()->total_entries;
 			}
 
 			std::size_t dec_total_count() noexcept {
-				this->get()->total_entries = (this->get()->total_entries.get() - 1);
-				return this->get()->total_entries;
+				get_slot()->total_entries = (get_slot()->total_entries.get() - 1);
+				return get_slot()->total_entries;
 			}
+			
+			auto get_slot() {
+				return reinterpret_cast<page::directory_header*>(slot_.data());
+			}
+
+			auto get_slot() const {
+				return reinterpret_cast<const page::directory_header*>(slot_.data());
+			}
+
+			core::byte_span slot_{};
 		};
 
 		using model_type = fulla::bpt::paged::model<
@@ -307,16 +321,16 @@ namespace fullafs {
 			return *this;
 		}
 
-		directory_handle(directory_handle&& other)
+		directory_handle(directory_handle&& other) noexcept
 			: header_pid_(std::move(other.header_pid_))
 			, header_slot_(std::move(other.header_slot_))
 			, allocator_(other.allocator_)
-			, bpt_(tree_type(*allocator_, fulla::bpt::paged::settings{}, root_accessor(this)))
+			, bpt_(tree_type(*allocator_, fulla::bpt::paged::settings{}, root_accessor(this))) 
 		{
 			bpt_->set_rebalance_policy(fulla::bpt::policies::rebalance::neighbor_share);
 		}
 
-		directory_handle& operator = (directory_handle&& other) {
+		directory_handle& operator = (directory_handle&& other) noexcept {
 			header_pid_ = std::move(other.header_pid_);
 			header_slot_ = std::move(other.header_slot_);
 			allocator_ = std::move(other.allocator_);
@@ -361,8 +375,15 @@ namespace fullafs {
 			return header_pid_;
 		}
 
+		std::uint16_t slot() const noexcept {
+			return header_slot_;
+		}
+
 		bool is_valid() const noexcept {
-			return (allocator_ != nullptr) && allocator_->valid_id(header_pid_) && bpt_.has_value();
+			return (allocator_ != nullptr) 
+				&& allocator_->valid_id(header_pid_)
+				&& (header_slot_ != 0xFFFF)
+ 				&& bpt_.has_value();
 		}
 		
 		std::size_t total_entries() noexcept {
@@ -411,13 +432,14 @@ namespace fullafs {
 			if (!is_valid()) {
 				return {};
 			}
-			auto new_dir = create(allocator_, pid());
+			auto new_dir = create(allocator_, pid(), slot());
 			if (new_dir.is_valid()) {
 				auto& bpt = *bpt_;
 				const auto full_name = core::make_directory_name(name);
 				auto desc_data = core::make_directory_descriptor();
 				auto desc = reinterpret_cast<page::entry_descriptor *>(desc_data.data());
 				desc->page = new_dir.pid();
+				desc->slot = new_dir.slot();
 				desc->kind = static_cast<word_u16::word_type>(core::name_type::directory);
 				if (bpt.insert(
 					key_like_type{ core::as_byte_view(full_name) }, 
@@ -429,21 +451,24 @@ namespace fullafs {
 			return {};
 		}
 
-		static directory_handle create(allocator_type* allocator, pid_type parent) {
-			auto new_directory = allocate_page<page::directory_header>(allocator, page::kind::directory_header);
+		static directory_handle create(allocator_type* allocator, pid_type parent, std::uint16_t parent_slot) {
+			directory_storage_type storage(*allocator);
+
+			auto [new_directory, slot_id] = storage.allocate_entry(parent, parent_slot);
+
 			if (new_directory.is_valid()) {
-				typename directory_handle::access_handle hdl{ new_directory };
-				hdl.get()->init(parent);
-				return directory_handle(hdl.handle().pid(), word_u16::max(), *allocator);
+				return directory_handle(new_directory.pid(), slot_id, *allocator);
 			}
 			return {};
 		}
 
-		static directory_handle open_dir(allocator_type* allocator, pid_type pid) {
-			auto dir = allocator->fetch(pid);
-			page_view_type pv{ dir.ro_span() };
-			if (pv.header().kind == static_cast<std::uint16_t>(page::kind::directory_header)) {
-				return directory_handle(pid, *allocator);
+		static directory_handle open_dir(allocator_type* allocator, pid_type pid, std::uint16_t slot) {
+
+			directory_storage_type pstore(*allocator);
+
+			auto [dir, _] = pstore.open_entry(pid, slot);
+			if (dir.is_valid()) {
+				return directory_handle(pid, slot, *allocator);
 			}
 			return {};
 		}
@@ -460,8 +485,13 @@ namespace fullafs {
 	private:
 
 		access_handle open() {
-			auto hdl = allocator_->fetch(header_pid_);
-			return access_handle(hdl);
+			directory_storage_type dstore(*allocator_);
+
+			auto [hdl, data] = dstore.open_entry(header_pid_, header_slot_);
+			if (hdl.is_valid()) {
+				return access_handle(hdl, data);
+			}
+			return {};
 		}
 
 		template <typename SubheaderT>

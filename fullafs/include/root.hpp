@@ -38,7 +38,7 @@ namespace fullafs {
 		directory_handle open_root() {
 			auto sb = allocator_.fetch_superblock();
 			if (sb.is_valid()) {
-				return directory_handle(sb.root().page, word_u16::max(), allocator_);
+				return directory_handle(sb.root().page, sb.root().slot, allocator_);
 			}
 			return {};
 		}
@@ -56,8 +56,9 @@ namespace fullafs {
 		void create_root_directory() {
 			auto sb = allocator_.fetch_superblock();
 			if (sb.is_valid()) {
-				auto new_dir = directory_handle::create(&allocator_, 0);
+				auto new_dir = directory_handle::create(&allocator_, sb.pid(), 0);
 				sb.root().page = new_dir.pid();
+				sb.root().slot = static_cast<std::uint16_t>(new_dir.slot());
 			}
 		}
 

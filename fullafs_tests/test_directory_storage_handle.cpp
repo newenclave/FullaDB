@@ -23,7 +23,7 @@ TEST_SUITE("fullafs/directory_storage_handle") {
 		mem_device_type dev(4096);
 		page_allocator allocator(dev, 10);
 		allocator.create_superblock();
-		directory_storage_handle hdr(allocator, 0);
+		directory_storage_handle hdr(allocator);
 		
 		auto [first_dir, first_id] = hdr.allocate_entry(0);
 		std::cout << std::format("id: {}\n", first_dir.pid());
@@ -34,7 +34,7 @@ TEST_SUITE("fullafs/directory_storage_handle") {
 			[[maybe_unused]] auto [dir, id] = hdr.allocate_entry(0);
 		}
 
-		hdr.free_entry(3, 0);
+		hdr.free_entry(3, 33);
 
 		auto [tdir, tid] = hdr.allocate_entry(0);
 		auto [tdir0, tid0] = hdr.allocate_entry(0);

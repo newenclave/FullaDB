@@ -76,6 +76,14 @@ FULLA_PACKED_STRUCT_END
             return false;
         }
 
+        bool test(std::size_t id) const noexcept {
+            auto bs = get_bitset();
+            if (id < bs.bits_count() ) {
+                return bs.test(id);
+            }
+            return false;
+        }
+
         bool set(std::size_t id, core::byte_view data) {
             auto bs = get_bitset();
             auto hdr = header();
@@ -91,13 +99,13 @@ FULLA_PACKED_STRUCT_END
             return false;
         }
 
-        core::byte_span get(std::size_t id, bool test = false) {
+        core::byte_span get(std::size_t id) {
 
             auto bs = get_bitset();
             auto hdr = header();
             const auto obj_size = hdr->size.get();
 
-            if (id < bs.bits_count() && (bs.test(id) || !test)) {
+            if (id < bs.bits_count() && bs.test(id)) {
                 const auto pos = (id * obj_size);
                 auto values = get_slots();
                 return { values.data() + pos, obj_size };
@@ -105,12 +113,12 @@ FULLA_PACKED_STRUCT_END
             return {};
         }
 
-        core::byte_view get(std::size_t id, bool test = false) const {
+        core::byte_view get(std::size_t id) const {
             auto bs = get_bitset();
             auto hdr = header();
             const auto obj_size = hdr->size.get();
 
-            if (id < bs.bits_count() && (bs.test(id) || !test)) {
+            if (id < bs.bits_count() && bs.test(id)) {
                 const auto pos = (id * obj_size);
                 auto values = get_slots();
                 return { values.data() + pos, obj_size };

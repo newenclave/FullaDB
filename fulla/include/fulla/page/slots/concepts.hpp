@@ -23,6 +23,10 @@ namespace fulla::page::slots::concepts {
     template <typename SdT>
     concept StableDirectory = requires(SdT sdt, std::size_t pos, byte_view bv, std::size_t len) {
         { sdt.size() } -> std::convertible_to<std::size_t>;
+        { sdt.capacity() } -> std::convertible_to<std::size_t>;
+        { sdt.erase(pos) } -> std::same_as<bool>;
+        { sdt.set(pos, bv) } -> std::same_as<bool>;
+        //{ sdt.get(pos) } -> std::same_as<byte_view>;
     };
 
     template <typename SdT>

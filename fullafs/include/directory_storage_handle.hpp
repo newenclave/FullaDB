@@ -35,12 +35,11 @@ namespace fullafs {
 		using page_slot_type = page::directory_header;
 		using superblock_header_type = page::superblock;
 
-		directory_storage_handle(allocator_type& allocator, pid_type sb_id)
+		directory_storage_handle(allocator_type& allocator)
 			: allocator_(&allocator)
-			, superblock_id(sb_id)
 		{}
 		
-		std::tuple<page_handle, std::uint16_t> allocate_entry(pid_type parent) {
+		std::tuple<page_handle, std::uint16_t> allocate_entry(pid_type parent, std::uint16_t parent_slot = 0xFFFF) {
 			byte_span ready_slot;
 			std::uint16_t position = 0xFFFF;
 			page_handle page = {};
@@ -52,7 +51,7 @@ namespace fullafs {
 					slots.set(position, {});
 					ready_slot = slots.get(position);
 					page = ff.handle();
-
+					
 					const auto capacity_for = slots.capacity() - slots.size();
 
 					if (capacity_for == 0) {
@@ -74,20 +73,33 @@ namespace fullafs {
 				[[maybe_unused]] const auto available = slots.capacity();
 
 				position = 0;
-				ready_slot = slots.get(0);
 				slots.set(0, {});
+				ready_slot = slots.get(0);
 				page = new_page.handle();
 				push_page_to_list(new_page);
 			}
 
 			if (!ready_slot.empty()) {
 				auto hdr = reinterpret_cast<page_slot_type*>(ready_slot.data());
-				hdr->init(parent);
+				hdr->init(parent, parent_slot);
+				page.mark_dirty();
 				return { std::move(page), position };
 			}
 			return {};
 		}
 		
+		std::tuple<page_handle, fulla::core::byte_span> open_entry(pid_type pid, std::uint16_t slot) {
+			storage_handle sh(allocator_->fetch(pid)); 
+			if (sh) {
+				auto slots = sh.get_slots();
+				if (slots.test(slot)) {
+					auto data = slots.get(slot);
+					return { sh.handle(), data };
+				}
+			}
+			return {};
+		}
+
 		void free_entry(pid_type ph, std::uint16_t sid) {
 			free_entry(allocator_->fetch(ph), sid);
 		}
@@ -98,6 +110,7 @@ namespace fullafs {
 				auto slots = sh.get_slots();
 				if (sid < slots.size()) {
 					slots.erase(sid);
+					sh.mark_dirty();
 				}
 				if (!page_in_list(sh)) {
 					push_page_to_list(sh);
@@ -132,6 +145,7 @@ namespace fullafs {
 					current.get()->prev = ph.handle().pid();
 				}
 				sb.get()->first_directory_storage = ph.handle().pid();
+				ph.mark_dirty();
 			}
 		}
 
@@ -149,6 +163,7 @@ namespace fullafs {
 
 			ph.get()->next = allocator_type::invalid_pid;
 			ph.get()->prev = allocator_type::invalid_pid;
+			ph.mark_dirty();
 
 			if (next) {
 				next.get()->prev = prev.handle().pid();
@@ -164,6 +179,5 @@ namespace fullafs {
 		}
 
 		allocator_type* allocator_ = nullptr;
-		pid_type superblock_id = 0; // sb should be the very first by-default
 	};
 }

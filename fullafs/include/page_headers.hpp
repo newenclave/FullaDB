@@ -23,11 +23,16 @@ FULLA_PACKED_STRUCT_BEGIN
     // header of the dir. Could be in slots
     struct directory_header {
         pid_type parent{ pid_type::max() };
+
+        word_u16 parent_slot{ word_u16::max() };
+        word_u16 reserved0{ word_u16::max() };
+
         pid_type entry_root { pid_type::max() };
         word_u32 total_entries{ 0 };
         word_u32 reserved[4]{};
-        void init(pid_type::word_type parent_pid) {
+        void init(pid_type::word_type parent_pid, word_u16::word_type parent_slot_id) {
             parent = parent_pid;
+            parent_slot = parent_slot_id;
             entry_root = pid_type::max();
             total_entries = 0;
         }

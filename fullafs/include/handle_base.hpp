@@ -30,6 +30,10 @@ namespace fullafs::storage {
         {
         }
 
+        auto pid() const noexcept {
+            return handle().pid();
+        }
+
         page_handle handle() const noexcept {
             return hdl_;
         }
