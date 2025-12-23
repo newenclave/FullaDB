@@ -59,4 +59,14 @@ namespace fulla::page {
         } FULLA_PACKED;
     }
     FULLA_PACKED_STRUCT_END
+
+    FULLA_PACKED_STRUCT_BEGIN
+    struct stable_header {
+        word_u16 size{ 0 }; // one slot size
+        word_u16 capacity{ 0 }; // maximum slots
+        word_u16 bitmask_words{ 0 };
+        word_u16 reserved{ 0 };
+    } FULLA_PACKED;
+    FULLA_PACKED_STRUCT_END
+
 } 

@@ -13,6 +13,7 @@
 #include "fulla/core/pack.hpp"
 #include "fulla/core/bitset.hpp"
 
+#include "fulla/page/slots.hpp"
 #include "fulla/slots/concepts.hpp"
 
 namespace fulla::slots { 
@@ -22,16 +23,6 @@ namespace fulla::slots {
     using core::byte_span;
     using core::byte_view;
     using core::byte_buffer;
-
-FULLA_PACKED_STRUCT_BEGIN
-    struct stable_header {
-        word_u16 size{ 0 }; // one slot size
-        word_u16 capacity{ 0 }; // maximum slots
-        word_u16 bitmask_words{ 0 };
-        word_u16 reserved{ 0 };
-} FULLA_PACKED;
-FULLA_PACKED_STRUCT_END
-
     
     template <typename SpanT>
         requires(std::same_as<SpanT, core::byte_view> || std::same_as<SpanT, core::byte_span>)
@@ -44,8 +35,8 @@ FULLA_PACKED_STRUCT_END
 
         using header_ptr = std::conditional_t<
             is_const,
-            const stable_header *,
-            stable_header *
+            const page::stable_header *,
+            page::stable_header *
         >;
 
         stable_directory_view(span_type body) 
@@ -128,7 +119,7 @@ FULLA_PACKED_STRUCT_END
 
         void init(std::size_t objsize) {
 
-            const auto available_size = (body_.size() - sizeof(stable_header));
+            const auto available_size = (body_.size() - sizeof(page::stable_header));
 
             auto [bitmap_words, cap] = core::max_objects_by_words<std::uint32_t>(available_size, objsize);
             auto hdr = header();
@@ -143,20 +134,20 @@ FULLA_PACKED_STRUCT_END
 
         bitset_type get_bitset() noexcept {
             auto bss = bitset_size();
-            return { body_.subspan(sizeof(stable_header), bss), header()->capacity.get()};
+            return { body_.subspan(sizeof(page::stable_header), bss), header()->capacity.get()};
         }
 
         bitset_type get_bitset() const noexcept {
             auto bss = bitset_size();
-            return { body_.subspan(sizeof(stable_header), bss), header()->capacity.get() };
+            return { body_.subspan(sizeof(page::stable_header), bss), header()->capacity.get() };
         }
 
-        stable_header* header() noexcept {
-            return reinterpret_cast<stable_header*>(body_.data());
+        page::stable_header* header() noexcept {
+            return reinterpret_cast<page::stable_header*>(body_.data());
         }
 
-        const stable_header* header() const noexcept {
-            return reinterpret_cast<const stable_header*>(body_.data());
+        const page::stable_header* header() const noexcept {
+            return reinterpret_cast<const page::stable_header*>(body_.data());
         }
 
         std::size_t bitset_size() const {
@@ -164,7 +155,7 @@ FULLA_PACKED_STRUCT_END
         }
 
         std::size_t total_header_size() const noexcept {
-            return sizeof(stable_header) + bitset_size();
+            return sizeof(page::stable_header) + bitset_size();
         }
 
         core::byte_view get_slots() const noexcept {
