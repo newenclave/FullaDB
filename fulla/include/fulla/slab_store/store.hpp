@@ -125,17 +125,23 @@ namespace fulla::slab_store {
 			}
 
 			core::byte_span rw_span() {
-				if (is_valid()) {
+				if (handle.is_valid()) {
 					header_handle hh{ handle };
-					return hh.get_slots().get(slot_id);
+					auto slots = hh.get_slots();
+					if (slots.test(slot_id)) {
+						return hh.get_slots().get(slot_id);
+					}
 				}
 				return {};
 			}
 			
 			core::byte_view ro_span() const {
-				if (is_valid()) {
+				if (handle.is_valid()) {
 					header_handle hh{ handle };
-					return hh.get_slots().get(slot_id);
+					auto slots = hh.get_slots();
+					if (slots.test(slot_id)) {
+						return hh.get_slots().get(slot_id);
+					}
 				}
 				return {};
 			}
@@ -182,12 +188,12 @@ namespace fulla::slab_store {
 		}
 
 		page_handle allocate() {
-			auto [ph, _] = create_entry();
+			auto ph = create_entry();
 			return ph;
 		}
 
 		page_handle fetch(pid_type pid) {
-			auto [ph, _] = get_entry(pid, pid.slot);
+			auto ph = get_entry(pid, pid.slot);
 			return ph;
 		}
 
@@ -205,7 +211,7 @@ namespace fulla::slab_store {
 
 	private:
 
-		std::tuple<page_handle, std::uint16_t> create_entry() {
+		page_handle create_entry() {
 			
 			byte_span ready_slot;
 			std::uint16_t position = 0xFFFF;
@@ -241,19 +247,19 @@ namespace fulla::slab_store {
 				page = new_page.handle;
 				push_page_to_list(new_page);
 			}
+
 			if (!ready_slot.empty()) {
 				page.mark_dirty();
-				return { { std::move(page), position }, position };
+				return { std::move(page), position };
 			}
 			return {};
 		}
 
-		std::tuple<page_handle, fulla::core::byte_span> get_entry(pid_type pid, std::uint16_t slot) {
+		page_handle get_entry(pid_type pid, std::uint16_t slot) {
 			if (auto sh = header_handle(allocator_->fetch(pid.pid))) {
 				auto slots = sh.get_slots();
 				if (slots.test(slot)) {
-					auto data = slots.get(slot);
-					return { { sh.handle, slot }, data };
+					return { sh.handle, slot };
 				}
 			}
 			return {};

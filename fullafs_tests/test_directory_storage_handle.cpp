@@ -20,7 +20,8 @@ TEST_SUITE("fullafs/directory_storage_handle") {
 	using page_allocator = storage::fs_page_allocator<mem_device_type>;
 	using directory_storage_handle = directory_storage_handle<mem_device_type>;
 	TEST_CASE("Create pages") {
-		mem_device_type dev(4096);
+
+		mem_device_type dev(1 * 4096);
 		page_allocator allocator(dev, 10);
 		allocator.create_superblock();
 		directory_storage_handle hdr(allocator);
@@ -42,7 +43,7 @@ TEST_SUITE("fullafs/directory_storage_handle") {
 		std::cout << std::format("\nnew page: {}:{}\n", tdir.pid(), tid);
 		std::cout << std::format("\nnew page 0: {}:{}\n", tdir0.pid(), tid0);
 
-		std::cout << std::format("\nPage allocated: {}\n", dev.blocks_count());
+		std::cout << std::format("\nDIR Page allocated: {}\n", dev.blocks_count());
 	}
 }
 
