@@ -18,6 +18,8 @@
 namespace fulla::core {
 
 	using core::byte;
+	using core::word_u32;
+	using core::word_u64;
 
 	template <typename WordT>
 	inline std::tuple<std::size_t, std::size_t> max_objects_by_words(std::size_t capacity, std::size_t object_size)
@@ -59,11 +61,14 @@ namespace fulla::core {
 		return { bitmap_words, best };
 	}
 
-	template <typename WordT = std::uint32_t, typename SpanT = core::byte_span>
-		requires (std::same_as<SpanT, core::byte_view> || std::same_as<SpanT, core::byte_span>)
+	template <typename WordT = core::word_u32, typename SpanT = core::byte_span>
+		requires (std::same_as<SpanT, core::byte_view> || std::same_as<SpanT, core::byte_span>) &&
+				 (std::same_as<WordT, core::word_u32> || std::same_as<WordT, core::word_u64>)
 	class bitset {
 	public:
 		using data_type = WordT;
+		using word_type = typename data_type::word_type;
+
 		constexpr static std::size_t data_bits = sizeof(data_type) * CHAR_BIT;
 		using span_type = SpanT;
 
@@ -106,7 +111,7 @@ namespace fulla::core {
 			}
 			const auto bucket = bit_pos / data_bits;
 			const auto pos = bit_pos % data_bits;
-			buckets_[bucket] |= (data_type{ 1 } << pos);
+			buckets_[bucket] = buckets_[bucket].get() | (word_type{1} << pos);
 		}
 
 		inline void clear(std::size_t bit_pos) {
@@ -115,7 +120,7 @@ namespace fulla::core {
 			}
 			const auto bucket = bit_pos / data_bits;
 			const auto pos = bit_pos % data_bits;
-			buckets_[bucket] &= ~(data_type{ 1 } << pos);
+			buckets_[bucket] = buckets_[bucket].get() & ~(word_type{1} << pos);
 		}
 
 		inline void reset() {
@@ -131,20 +136,20 @@ namespace fulla::core {
 			}
 			const auto bucket = bit_pos / data_bits;
 			const auto pos = bit_pos % data_bits;
-			return buckets_[bucket] & (data_type{ 1 } << pos);
+			return buckets_[bucket].get() & (word_type{1} << pos);
 		}
 
 		std::optional<std::size_t> find_zero_bit() const {
 			for (std::size_t b = 0; b < buckets_.size(); ++b) {
-				data_type bucket = buckets_[b];
+				auto bucket = buckets_[b].get();
 
-				if (bucket == static_cast<data_type>(~data_type(0))) {
+				if (bucket == static_cast<word_type>(~word_type(0))) {
 					continue;
 				}
 
 				int first_zero = 0;
 
-				if constexpr (std::is_same_v<data_type, uint32_t>) {
+				if constexpr (std::is_same_v<word_type, uint32_t>) {
 
 #if defined(__GNUC__)
 					first_zero = __builtin_ffs(~bucket) - 1; // __builtin_ffs is 1-based value
@@ -160,7 +165,7 @@ namespace fulla::core {
 					}
 #endif
 				}
-				else if constexpr (std::is_same_v<data_type, uint64_t>) {
+				else if constexpr (std::is_same_v<word_type, uint64_t>) {
 #if defined(__GNUC__)
 					first_zero = __builtin_ffsll(~bucket) - 1; // __builtin_ffs is 1-based value
 #elif defined(_MSC_VER) // for testing purposes
@@ -169,7 +174,7 @@ namespace fulla::core {
 					first_zero = pos;
 #else
 					for (first_zero = 0; first_zero < data_bits; ++first_zero) {
-						if (!(bucket & (data_type{ 1 } << first_zero))) {
+						if (!(bucket & (word_type{ 1 } << first_zero))) {
 							break;
 						}
 					}
@@ -177,7 +182,7 @@ namespace fulla::core {
 				}
 				else {
 					for (first_zero = 0; first_zero < data_bits; ++first_zero) {
-						if (!(bucket & (data_type{ 1 } << first_zero))) {
+						if (!(bucket & (word_type{ 1 } << first_zero))) {
 							break;
 						}
 					}
@@ -193,14 +198,14 @@ namespace fulla::core {
 
 		std::optional<std::size_t> find_set_bit() const {
 			for (std::size_t b = 0; b < buckets_.size(); ++b) {
-				data_type bucket = buckets_[b];
+				auto bucket = buckets_[b].get();
 
 				if (bucket == 0) {
 					continue;
 				}
 
 				int first_set = 0;
-				if constexpr (std::is_same_v<data_type, std::uint32_t>) {
+				if constexpr (std::is_same_v<word_type, std::uint32_t>) {
 #if defined(__GNUC__)
 					first_set = __builtin_ffs(bucket) - 1; // __builtin_ffs is 1-based value
 #elif defined(_MSC_VER)
@@ -215,7 +220,7 @@ namespace fulla::core {
 					}
 #endif
 				}
-				else if constexpr (std::is_same_v<data_type, std::uint64_t>) {
+				else if constexpr (std::is_same_v<word_type, std::uint64_t>) {
 #if defined(__GNUC__)
 					first_set = __builtin_ffsll(bucket) - 1; // __builtin_ffs is 1-based value
 #elif defined(_MSC_VER)
@@ -232,7 +237,7 @@ namespace fulla::core {
 				}
 				else {
 					for (first_set = 0; first_set < data_bits; ++first_set) {
-						if (bucket & (data_type{ 1 } << first_set)) {
+						if (bucket & (word_type{ 1 } << first_set)) {
 							break;
 						}
 					}
@@ -254,7 +259,7 @@ namespace fulla::core {
 		std::size_t popcount() const {
 			std::size_t total = 0;
 			for (std::size_t b = 0; b < buckets_.size(); ++b) {
-				total += std::popcount(buckets_[b]);
+				total += std::popcount(buckets_[b].get());
 			}
 			return total;
 		}
@@ -263,9 +268,9 @@ namespace fulla::core {
 			std::size_t result = 0;
 
 			for (std::size_t b = 0; b < buckets_.size(); ++b) {
-				data_type bucket = buckets_[b];
+				auto bucket = buckets_[b].get();
 
-				if constexpr (std::is_same_v<data_type, uint32_t>) {
+				if constexpr (std::is_same_v<word_type, uint32_t>) {
 #if defined(__GNUC__)
 					result += __builtin_popcount(bucket);
 #elif defined(_MSC_VER)
@@ -277,7 +282,7 @@ namespace fulla::core {
 					}
 #endif
 				}
-				else if constexpr (std::is_same_v<data_type, uint64_t>) {
+				else if constexpr (std::is_same_v<word_type, uint64_t>) {
 #if defined(__GNUC__)
 					result += __builtin_popcountll(bucket);
 #elif defined(_MSC_VER)

@@ -65,8 +65,8 @@ namespace fulla::radix_table::paged {
 		using value_out_type = pid_type;
 		using index_type = std::uint16_t;
 
-		using bitset_type = core::bitset<std::uint32_t>;
-		using cbitset_type = core::bitset<std::uint32_t, core::byte_view>;
+		using bitset_type = core::bitset<core::word_u32>;
+		using cbitset_type = core::bitset<core::word_u32, core::byte_view>;
 
 		radix_level() = default;
 		radix_level(allocator_type& allocator, page_handle page)
@@ -258,7 +258,7 @@ namespace fulla::radix_table::paged {
 		using pid_type = typename PaT::pid_type;
 		using output_type = radix_level<allocator_type>;
 		using index_type = std::uint16_t;
-		using bitset_type = core::bitset<std::uint32_t>;
+		using bitset_type = core::bitset<core::word_u32>;
 
 		using page_metadata_type = typename RlDT::page_metadata_type;
 		constexpr static const auto page_kind_value = RlDT::page_kind_value;

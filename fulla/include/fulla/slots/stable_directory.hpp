@@ -31,7 +31,7 @@ namespace fulla::slots {
         constexpr static bool is_const = std::same_as<SpanT, core::byte_view>;
 
         using span_type = SpanT;
-        using bitset_type = core::bitset<std::uint32_t, SpanT>;
+        using bitset_type = core::bitset<core::word_u32, SpanT>;
 
         using header_ptr = std::conditional_t<
             is_const,
