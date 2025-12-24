@@ -159,7 +159,7 @@ namespace fulla::core {
 					first_zero = pos;
 #else
 					for (first_zero = 0; first_zero < data_bits; ++first_zero) {
-						if (!(bucket & (data_type{ 1 } << first_zero))) {
+						if (!(bucket & (word_type{ 1 } << first_zero))) {
 							break;
 						}
 					}
@@ -229,7 +229,7 @@ namespace fulla::core {
 					first_set = pos;
 #else
 					for (first_set = 0; first_set < data_bits; ++first_set) {
-						if (bucket & (data_type{ 1 } << first_set)) {
+						if (bucket & (word_type{ 1 } << first_set)) {
 							break;
 						}
 					}
