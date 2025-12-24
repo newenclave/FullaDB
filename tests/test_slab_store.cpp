@@ -90,12 +90,13 @@ TEST_SUITE("slab storage") {
 	TEST_CASE("create") {
 		device_type device_type(4096);
 		page_allocator_type allocator(device_type, 16);
-		slab_storage_type<sizeof(test_data_struct)> store(allocator);
+		using slab_allocator_type = slab_storage_type<sizeof(test_data_struct)>;
+		slab_allocator_type store(allocator);
+		using pid_type = typename slab_allocator_type::pid_type;
 
 		struct stored_entry {
 			test_data_struct data;
-			std::uint32_t pid;
-			std::uint16_t slot;
+			pid_type pid;
 		};
 
 		std::unordered_map<int, stored_entry> expected_data;
@@ -107,31 +108,35 @@ TEST_SUITE("slab storage") {
 				.value = get_random_float(0.0f, 1000.0f),
 				.name = {}
 			};
-			std::strncpy(next.name, random_name.c_str(), sizeof(next.name) - 1);
-			auto [slot, id] = store.create_entry();
+			std::memcpy(next.name, random_name.c_str(), sizeof(next.name) - 1);
+			
+			auto slot = store.allocate();
 			REQUIRE(slot.is_valid());
-			auto [ph, span] = store.get_entry(slot.pid(), id);
+
+			auto ph = store.fetch(slot.pid());
 			REQUIRE(ph.is_valid());
+
+			auto span = ph.rw_span();
 			REQUIRE(span.size() == sizeof(test_data_struct));
 			std::memcpy(span.data(), &next, span.size());
 			expected_data[i] = stored_entry{ 
 				.data = next,
 				.pid = slot.pid(),
-				.slot = id
 			};
 		}
 
 		for (int i = 0; i < TEST_SLOTS; ++i) {
 			const auto &it = expected_data[i];
-			auto [ph, slot] = store.get_entry(it.pid, it.slot);
-			CHECK(*as_ptr<test_data_struct>(slot) == it.data);
+			auto ph = store.fetch(it.pid);
+			REQUIRE(ph.is_valid());
+			CHECK(*as_ptr<test_data_struct>(ph.ro_span()) == it.data);
 		}
 
 		while (!expected_data.empty()) {
 			auto random_id = get_random_int(0, expected_data.size() - 1);
 			auto it = expected_data.begin();
 			std::advance(it, random_id);
-			store.clear_entry(it->second.pid, it->second.slot);
+			store.destroy(it->second.pid);
 			expected_data.erase(it);
 		}
 
